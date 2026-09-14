@@ -374,7 +374,9 @@
 /* ── Compare slider ────────────────────────────────────────────────── */
 .compare {
   --wipe: 50;
-  --wipe-pos: calc(var(--wipe) * 1%);
+  --wipe-pos: 50%;
+  --media-top: 0px;
+  --media-height: 100%;
 }
 .compare-source {
   clip-path: inset(0 calc(100% - var(--wipe-pos)) 0 0);
@@ -382,6 +384,8 @@
 }
 .compare-line {
   left: var(--wipe-pos);
+  top: var(--media-top);
+  height: var(--media-height);
   transition: left var(--duration-fast) var(--ease-smooth-out);
 }
 .compare-handle {

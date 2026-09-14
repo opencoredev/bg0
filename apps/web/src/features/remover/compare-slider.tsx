@@ -44,6 +44,8 @@ export function CompareSlider({
   className?: string
 }) {
   const rootRef = useRef<HTMLDivElement>(null)
+  const sourceRef = useRef<HTMLImageElement>(null)
+  const mediaBoundsRef = useRef({ left: 0, width: 0, top: 0, height: 0 })
   const wipeRef = useRef(50)
   const [dragging, setDragging] = useState(false)
   const [announced, setAnnounced] = useState(50)
@@ -51,7 +53,16 @@ export function CompareSlider({
   const write = useCallback((value: number) => {
     const next = clamp(value)
     wipeRef.current = next
-    rootRef.current?.style.setProperty('--wipe', String(next))
+    const root = rootRef.current
+    if (!root) return
+    root.style.setProperty('--wipe', String(next))
+    const bounds = mediaBoundsRef.current
+    if (bounds.width > 0) {
+      root.style.setProperty(
+        '--wipe-pos',
+        `${bounds.left + (bounds.width * next) / 100}px`,
+      )
+    }
   }, [])
 
   const commit = useCallback(
@@ -62,8 +73,50 @@ export function CompareSlider({
   const positionFromPointer = useCallback((clientX: number) => {
     const rect = rootRef.current?.getBoundingClientRect()
     if (!rect || rect.width === 0) return wipeRef.current
-    return ((clientX - rect.left) / rect.width) * 100
+    const bounds = mediaBoundsRef.current
+    if (bounds.width === 0) return wipeRef.current
+    return ((clientX - rect.left - bounds.left) / bounds.width) * 100
   }, [])
+
+  const measureMedia = useCallback(() => {
+    const root = rootRef.current
+    const image = sourceRef.current
+    if (!root || !image?.naturalWidth || !image.naturalHeight) return
+    const width = root.clientWidth
+    const height = root.clientHeight
+    if (width === 0 || height === 0) return
+
+    const scale = Math.min(
+      width / image.naturalWidth,
+      height / image.naturalHeight,
+    )
+    const mediaWidth = image.naturalWidth * scale
+    const mediaHeight = image.naturalHeight * scale
+    const bounds = {
+      left: (width - mediaWidth) / 2,
+      width: mediaWidth,
+      top: (height - mediaHeight) / 2,
+      height: mediaHeight,
+    }
+    mediaBoundsRef.current = bounds
+    root.style.setProperty('--media-top', `${bounds.top}px`)
+    root.style.setProperty('--media-height', `${bounds.height}px`)
+    write(wipeRef.current)
+  }, [write])
+
+  useLayoutEffect(() => {
+    const root = rootRef.current
+    const image = sourceRef.current
+    if (!root || !image) return
+    measureMedia()
+    image.addEventListener('load', measureMedia)
+    const observer = new ResizeObserver(measureMedia)
+    observer.observe(root)
+    return () => {
+      image.removeEventListener('load', measureMedia)
+      observer.disconnect()
+    }
+  }, [measureMedia])
 
   // Peeking must be instant both ways: no clip-path tween while Space is
   // held, and none on release either. The attribute is cleared one frame
@@ -189,6 +242,7 @@ export function CompareSlider({
         className="absolute inset-0 size-full object-contain"
       />
       <img
+        ref={sourceRef}
         src={sourceUrl}
         alt=""
         draggable={false}
@@ -196,7 +250,7 @@ export function CompareSlider({
       />
       <div
         aria-hidden="true"
-        className="compare-line compare-fade absolute inset-y-0 w-0.5 -translate-x-1/2 bg-wipe"
+        className="compare-line compare-fade absolute w-0.5 -translate-x-1/2 bg-wipe"
       />
       <div
         role="slider"
