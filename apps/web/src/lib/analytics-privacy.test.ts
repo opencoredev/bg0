@@ -58,15 +58,29 @@ describe('analytics privacy', () => {
     const privateError = new Error(
       'vacation.png (4032x3024) failed at blob:https://bg0.dev/private',
     )
-    const result = createReportableError(privateError, {
-      area: 'background_removal',
-      reason: 'inference-failed',
-    })
+    privateError.stack = [
+      `Error: ${privateError.message}`,
+      '    at removeVacation (https://bg0.dev/assets/remover-AbC123.js?private=1:42:7)',
+      '    at vacation.png (https://images.example/vacation.png:1:1)',
+    ].join('\n')
+    const result = createReportableError(
+      privateError,
+      {
+        area: 'background_removal',
+        reason: 'inference-failed',
+      },
+      'https://bg0.dev',
+    )
 
     expect(result.name).toBe('BG0Error')
     expect(result.message).toBe('Background removal failed: inference-failed')
     expect(result.stack).not.toContain('vacation.png')
     expect(result.stack).not.toContain('4032x3024')
     expect(result.stack).not.toContain('blob:')
+    expect(result.stack).not.toContain('removeVacation')
+    expect(result.stack).not.toContain('?private=1')
+    expect(result.stack).toContain(
+      'at https://bg0.dev/assets/remover-AbC123.js:42:7',
+    )
   })
 })

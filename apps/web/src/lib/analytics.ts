@@ -1,8 +1,8 @@
 import type { PostHog } from 'posthog-js'
 import {
   createReportableError,
-  sanitizeCapture,
   type ReportableErrorContext,
+  sanitizeCapture,
 } from './analytics-privacy'
 
 const POSTHOG_KEY = 'phc_wVUY4kf7cB9GCtKztaQ4dk6ooYU8QaagC88breDYcgaj'
@@ -23,7 +23,10 @@ function captureControlledException(
   error: unknown,
   context: ReportableErrorContext,
 ) {
-  client.captureException(createReportableError(error, context), context)
+  client.captureException(
+    createReportableError(error, context, window.location.origin),
+    context,
+  )
 }
 
 function registerUnhandledErrorTracking(client: PostHog) {

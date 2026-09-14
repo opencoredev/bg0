@@ -59,8 +59,9 @@ export function sanitizeCapture(capture: CaptureResult | null) {
 }
 
 export function createReportableError(
-  _error: unknown,
+  originalError: unknown,
   context: ReportableErrorContext,
+  applicationOrigin = '',
 ) {
   const message =
     context.area === 'background_removal'
@@ -72,5 +73,32 @@ export function createReportableError(
           : 'Unhandled promise rejection'
   const error = new Error(message)
   error.name = 'BG0Error'
+  const frames = extractApplicationFrames(originalError, applicationOrigin)
+  if (frames.length > 0) {
+    error.stack = `${error.name}: ${error.message}\n${frames.join('\n')}`
+  }
   return error
+}
+
+function extractApplicationFrames(error: unknown, applicationOrigin: string) {
+  if (!(error instanceof Error) || !error.stack || !applicationOrigin) return []
+
+  return error.stack.split('\n').flatMap((line) => {
+    const match = line.match(/(https?:\/\/[^\s)]+):(\d+):(\d+)/)
+    if (!match) return []
+
+    try {
+      const source = new URL(match[1])
+      const isApplicationCode =
+        source.origin === applicationOrigin &&
+        (/^\/assets\/[\w./-]+\.js$/.test(source.pathname) ||
+          /^\/src\/[\w./-]+\.(?:js|jsx|ts|tsx)$/.test(source.pathname))
+      if (!isApplicationCode) return []
+      source.search = ''
+      source.hash = ''
+      return [`    at ${source.href}:${match[2]}:${match[3]}`]
+    } catch {
+      return []
+    }
+  })
 }
