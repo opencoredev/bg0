@@ -21,6 +21,7 @@ import { Kbd } from '#/components/ui/kbd'
 import { Tabs, TabsList, TabsTrigger } from '#/components/ui/tabs'
 import { Toast, type ToastMessage } from '#/components/ui/toast'
 import {
+  captureAppException,
   captureFeatureUsed,
   captureImageSelected,
   captureRemovalFailed,
@@ -190,12 +191,18 @@ export function Remover() {
           : 'Local processing could not finish. Try again.'
       setState({ status: 'error', message })
       setAnnouncement(message)
-      captureRemovalFailed(
-        inputMethod,
+      const reason =
         error instanceof BackgroundRemovalError
           ? error.code
-          : 'inference-failed',
-      )
+          : 'inference-failed'
+      captureRemovalFailed(inputMethod, reason)
+      if (
+        reason === 'model-load-failed' ||
+        reason === 'out-of-memory' ||
+        reason === 'inference-failed'
+      ) {
+        captureAppException(error, { area: 'background_removal', reason })
+      }
     }
   }, [])
 

@@ -1,4 +1,4 @@
-import type { CaptureResult, PostHog } from 'posthog-js'
+import type { CaptureResult, PostHog, Properties } from 'posthog-js'
 
 const POSTHOG_KEY = 'phc_wVUY4kf7cB9GCtKztaQ4dk6ooYU8QaagC88breDYcgaj'
 const POSTHOG_HOST = 'https://us.i.posthog.com'
@@ -13,9 +13,27 @@ type Feature =
 
 let clientPromise: Promise<PostHog | null> | null = null
 
-function withoutUrls(properties: CaptureResult['properties'] | undefined) {
+const PRIVATE_URL = /\b(?:blob:|data:image\/)[^\s"')]+/gi
+
+function redactPrivateUrls(value: unknown): unknown {
+  if (typeof value === 'string') {
+    return value.replace(PRIVATE_URL, '[private image URL]')
+  }
+  if (Array.isArray(value)) return value.map(redactPrivateUrls)
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, nested]) => [
+        key,
+        redactPrivateUrls(nested),
+      ]),
+    )
+  }
+  return value
+}
+
+function safeProperties(properties: Properties | undefined) {
   if (!properties) return undefined
-  const sanitized = { ...properties }
+  const sanitized = redactPrivateUrls(properties) as Properties
   delete sanitized.$current_url
   delete sanitized.$referrer
   delete sanitized.$initial_current_url
@@ -27,15 +45,26 @@ function stripUrls(capture: CaptureResult | null) {
   if (!capture) return null
   return {
     ...capture,
-    properties: withoutUrls(capture.properties) ?? {},
-    $set: withoutUrls(capture.$set),
-    $set_once: withoutUrls(capture.$set_once),
+    properties: safeProperties(capture.properties) ?? {},
+    $set: safeProperties(capture.$set),
+    $set_once: safeProperties(capture.$set_once),
   }
+}
+
+function safeError(error: unknown) {
+  if (!(error instanceof Error)) {
+    return new Error('A non-Error value was thrown')
+  }
+  const sanitized = new Error(redactPrivateUrls(error.message) as string)
+  sanitized.name = error.name
+  sanitized.stack = redactPrivateUrls(error.stack) as string | undefined
+  return sanitized
 }
 
 function analyticsEnabled() {
   if (typeof window === 'undefined') return false
   return (
+    import.meta.env.VITE_POSTHOG_ENABLED === 'true' ||
     window.location.hostname === 'bg0.dev' ||
     window.location.hostname === 'www.bg0.dev'
   )
@@ -53,9 +82,14 @@ function getClient(): Promise<PostHog | null> {
           capture_pageleave: true,
           capture_pageview: false,
           capture_performance: false,
+          capture_exceptions: {
+            capture_unhandled_errors: true,
+            capture_unhandled_rejections: true,
+            capture_console_errors: false,
+          },
           disable_session_recording: true,
-          disable_surveys: true,
-          advanced_disable_feature_flags: true,
+          disable_surveys: false,
+          advanced_only_evaluate_survey_feature_flags: true,
           person_profiles: 'never',
           persistence: 'localStorage',
           before_send: stripUrls,
@@ -112,4 +146,13 @@ export function captureResultDownloaded(provider: 'wasm' | 'webgpu') {
 
 export function captureFeatureUsed(feature: Feature) {
   capture('feature_used', { feature })
+}
+
+export function captureAppException(
+  error: unknown,
+  properties: { area: 'background_removal' | 'route'; reason?: string },
+) {
+  void getClient().then((client) =>
+    client?.captureException(safeError(error), properties),
+  )
 }

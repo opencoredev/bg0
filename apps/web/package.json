@@ -38,6 +38,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.13",
+    "@posthog/rollup-plugin": "^1.6.0",
     "@tanstack/devtools-vite": "latest",
     "@tanstack/router-cli": "^1.132.0",
     "@types/node": "^22.10.2",

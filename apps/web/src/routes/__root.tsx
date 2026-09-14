@@ -7,6 +7,7 @@ import {
 } from '@tanstack/react-router'
 
 import { AnalyticsPageView } from '#/components/analytics-page-view'
+import { AppError } from '#/components/app-error'
 import { SiteFooter } from '#/components/site-footer'
 import { SiteHeader } from '#/components/site-header'
 import { Button } from '#/components/ui/button'
@@ -65,6 +66,7 @@ export const Route = createRootRoute({
     ],
   }),
   notFoundComponent: NotFound,
+  errorComponent: AppError,
   shellComponent: RootDocument,
   component: RootLayout,
 })
