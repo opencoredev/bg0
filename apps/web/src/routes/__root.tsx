@@ -17,6 +17,21 @@ import appCss from '../styles.css?url'
 const DESCRIPTION =
   'Background removal that stays on your device. Drop an image, get a transparent PNG. Nothing is uploaded.'
 
+const STRUCTURED_DATA = JSON.stringify({
+  '@context': 'https://schema.org',
+  '@type': 'WebApplication',
+  name: 'BG0',
+  url: SITE_URL,
+  description: DESCRIPTION,
+  applicationCategory: 'MultimediaApplication',
+  operatingSystem: 'Any',
+  offers: {
+    '@type': 'Offer',
+    price: '0',
+    priceCurrency: 'USD',
+  },
+})
+
 const THEME_SCRIPT = `(function(){try{var key='bg0-theme';var saved=localStorage.getItem(key);var theme=saved==='light'||saved==='dark'?saved:(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');var root=document.documentElement;root.classList.toggle('dark',theme==='dark');root.style.colorScheme=theme;var meta=document.querySelector('meta[name="theme-color"]');if(meta)meta.content=theme==='dark'?'#0a0a0a':'#ffffff'}catch(_){}})()`
 
 export const Route = createRootRoute({
@@ -31,6 +46,7 @@ export const Route = createRootRoute({
       { name: 'theme-color', content: '#0a0a0a' },
       { name: 'color-scheme', content: 'light dark' },
       { property: 'og:type', content: 'website' },
+      { property: 'og:locale', content: 'en_US' },
       { property: 'og:site_name', content: 'BG0' },
       { property: 'og:title', content: 'BG0 — Remove backgrounds locally' },
       { property: 'og:description', content: DESCRIPTION },
@@ -43,6 +59,7 @@ export const Route = createRootRoute({
         content: 'BG0: background removal that stays on your device',
       },
       { name: 'twitter:card', content: 'summary_large_image' },
+      { name: 'twitter:site', content: '@leodev' },
       { name: 'twitter:title', content: 'BG0 — Remove backgrounds locally' },
       { name: 'twitter:description', content: DESCRIPTION },
       { name: 'twitter:image', content: `${SITE_URL}/og.png` },
@@ -103,6 +120,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
       <head>
         {/* biome-ignore lint/security/noDangerouslySetInnerHtml: this static script runs before CSS to prevent a theme flash and contains no user input. */}
         <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
+        <script type="application/ld+json">{STRUCTURED_DATA}</script>
         <HeadContent />
       </head>
       <body>
