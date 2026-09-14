@@ -54,6 +54,27 @@ describe('analytics privacy', () => {
     )
   })
 
+  test('allows only the controlled multiple-choice survey schema', () => {
+    const allowed = sanitizeCapture({
+      event: '$survey_response',
+      properties: {
+        $survey_id: 'result-quality',
+        $survey_response_rating: 'Good',
+        $survey_response_problem: ['Edges look rough'],
+      },
+    } as unknown as CaptureResult)
+    const privateText = sanitizeCapture({
+      event: '$survey_response',
+      properties: {
+        $survey_response_comment:
+          'vacation.png was 4032x3024: https://example.com/photo.jpg',
+      },
+    } as unknown as CaptureResult)
+
+    expect(allowed).not.toBeNull()
+    expect(privateText).toBeNull()
+  })
+
   test('does not forward arbitrary exception metadata', () => {
     const privateError = new Error(
       'vacation.png (4032x3024) failed at blob:https://bg0.dev/private',

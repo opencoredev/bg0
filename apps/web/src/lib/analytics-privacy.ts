@@ -3,6 +3,16 @@ import type { CaptureResult, Properties } from 'posthog-js'
 const DATA_IMAGE_URL = /data:image\//i
 const BLOB_URL = /\bblob:[^\s"')]+/gi
 const PRIVATE_IMAGE_URL = '[private image URL]'
+const ALLOWED_SURVEY_RESPONSES = new Set([
+  'Great',
+  'Good',
+  'Needs work',
+  'Unusable',
+  'Background remained',
+  'Part of the subject was removed',
+  'Edges look rough',
+  'Transparency looks wrong',
+])
 
 export type ReportableErrorContext =
   | {
@@ -50,12 +60,41 @@ function safeProperties(properties: Properties | undefined) {
 
 export function sanitizeCapture(capture: CaptureResult | null) {
   if (!capture) return null
+  if (
+    capture.event === '$survey_response' &&
+    !hasOnlyAllowedSurveyResponses(capture.properties)
+  ) {
+    return null
+  }
   return {
     ...capture,
     properties: safeProperties(capture.properties) ?? {},
     $set: safeProperties(capture.$set),
     $set_once: safeProperties(capture.$set_once),
   }
+}
+
+function hasOnlyAllowedSurveyResponses(properties: Properties | undefined) {
+  if (!properties) return false
+  const responses = Object.entries(properties).filter(([key]) =>
+    key.startsWith('$survey_response'),
+  )
+  return (
+    responses.length > 0 &&
+    responses.every(([, value]) => {
+      if (typeof value === 'string') {
+        return ALLOWED_SURVEY_RESPONSES.has(value)
+      }
+      return (
+        Array.isArray(value) &&
+        value.length > 0 &&
+        value.every(
+          (answer) =>
+            typeof answer === 'string' && ALLOWED_SURVEY_RESPONSES.has(answer),
+        )
+      )
+    })
+  )
 }
 
 export function createReportableError(
