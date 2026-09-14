@@ -1,7 +1,8 @@
 import type { PostHog } from 'posthog-js'
 import {
-  redactPrivateUrls,
+  createReportableError,
   sanitizeCapture,
+  type ReportableErrorContext,
 } from './analytics-privacy'
 
 const POSTHOG_KEY = 'phc_wVUY4kf7cB9GCtKztaQ4dk6ooYU8QaagC88breDYcgaj'
@@ -17,14 +18,23 @@ type Feature =
 
 let clientPromise: Promise<PostHog | null> | null = null
 
-function safeError(error: unknown) {
-  if (!(error instanceof Error)) {
-    return new Error('A non-Error value was thrown')
-  }
-  const sanitized = new Error(redactPrivateUrls(error.message) as string)
-  sanitized.name = error.name
-  sanitized.stack = redactPrivateUrls(error.stack) as string | undefined
-  return sanitized
+function captureControlledException(
+  client: PostHog,
+  error: unknown,
+  context: ReportableErrorContext,
+) {
+  client.captureException(createReportableError(error, context), context)
+}
+
+function registerUnhandledErrorTracking(client: PostHog) {
+  window.addEventListener('error', (event) => {
+    captureControlledException(client, event.error, { area: 'unhandled_error' })
+  })
+  window.addEventListener('unhandledrejection', (event) => {
+    captureControlledException(client, event.reason, {
+      area: 'unhandled_rejection',
+    })
+  })
 }
 
 function analyticsEnabled() {
@@ -48,11 +58,7 @@ function getClient(): Promise<PostHog | null> {
           capture_pageleave: true,
           capture_pageview: false,
           capture_performance: false,
-          capture_exceptions: {
-            capture_unhandled_errors: true,
-            capture_unhandled_rejections: true,
-            capture_console_errors: false,
-          },
+          capture_exceptions: false,
           disable_session_recording: true,
           disable_surveys: false,
           advanced_only_evaluate_survey_feature_flags: true,
@@ -60,6 +66,7 @@ function getClient(): Promise<PostHog | null> {
           persistence: 'localStorage',
           before_send: sanitizeCapture,
         })
+        registerUnhandledErrorTracking(posthog)
         return posthog
       })
       .catch(() => null)
@@ -116,9 +123,12 @@ export function captureFeatureUsed(feature: Feature) {
 
 export function captureAppException(
   error: unknown,
-  properties: { area: 'background_removal' | 'route'; reason?: string },
+  context: Extract<
+    ReportableErrorContext,
+    { area: 'background_removal' | 'route' }
+  >,
 ) {
   void getClient().then((client) =>
-    client?.captureException(safeError(error), properties),
+    client ? captureControlledException(client, error, context) : undefined,
   )
 }

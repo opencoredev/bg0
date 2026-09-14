@@ -1,6 +1,10 @@
 import { describe, expect, test } from 'bun:test'
 import type { CaptureResult } from 'posthog-js'
-import { redactPrivateUrls, sanitizeCapture } from './analytics-privacy'
+import {
+  createReportableError,
+  redactPrivateUrls,
+  sanitizeCapture,
+} from './analytics-privacy'
 
 describe('analytics privacy', () => {
   test('redacts a complete quoted SVG data URI', () => {
@@ -48,5 +52,21 @@ describe('analytics privacy', () => {
     expect(redactPrivateUrls('model initialization failed')).toBe(
       'model initialization failed',
     )
+  })
+
+  test('does not forward arbitrary exception metadata', () => {
+    const privateError = new Error(
+      'vacation.png (4032x3024) failed at blob:https://bg0.dev/private',
+    )
+    const result = createReportableError(privateError, {
+      area: 'background_removal',
+      reason: 'inference-failed',
+    })
+
+    expect(result.name).toBe('BG0Error')
+    expect(result.message).toBe('Background removal failed: inference-failed')
+    expect(result.stack).not.toContain('vacation.png')
+    expect(result.stack).not.toContain('4032x3024')
+    expect(result.stack).not.toContain('blob:')
   })
 })

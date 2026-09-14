@@ -4,6 +4,21 @@ const DATA_IMAGE_URL = /data:image\//i
 const BLOB_URL = /\bblob:[^\s"')]+/gi
 const PRIVATE_IMAGE_URL = '[private image URL]'
 
+export type ReportableErrorContext =
+  | {
+      area: 'background_removal'
+      reason:
+        | 'decode-failed'
+        | 'image-too-large'
+        | 'inference-failed'
+        | 'model-load-failed'
+        | 'out-of-memory'
+        | 'unsupported-image'
+    }
+  | { area: 'route' }
+  | { area: 'unhandled_error' }
+  | { area: 'unhandled_rejection' }
+
 export function redactPrivateUrls(value: unknown): unknown {
   if (typeof value === 'string') {
     // A data URI can contain quotes, whitespace, and arbitrary SVG markup. Once
@@ -41,4 +56,21 @@ export function sanitizeCapture(capture: CaptureResult | null) {
     $set: safeProperties(capture.$set),
     $set_once: safeProperties(capture.$set_once),
   }
+}
+
+export function createReportableError(
+  _error: unknown,
+  context: ReportableErrorContext,
+) {
+  const message =
+    context.area === 'background_removal'
+      ? `Background removal failed: ${context.reason}`
+      : context.area === 'route'
+        ? 'Application route failed'
+        : context.area === 'unhandled_error'
+          ? 'Unhandled application error'
+          : 'Unhandled promise rejection'
+  const error = new Error(message)
+  error.name = 'BG0Error'
+  return error
 }
