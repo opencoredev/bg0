@@ -10,6 +10,7 @@
     "generate-routes": "tsr generate",
     "build": "vite build",
     "preview": "vite preview",
+    "test": "bun test",
     "format": "biome format --write src vite.config.ts",
     "lint": "biome lint src vite.config.ts",
     "check": "biome check src vite.config.ts",

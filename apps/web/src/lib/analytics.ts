@@ -1,4 +1,8 @@
-import type { CaptureResult, PostHog, Properties } from 'posthog-js'
+import type { PostHog } from 'posthog-js'
+import {
+  redactPrivateUrls,
+  sanitizeCapture,
+} from './analytics-privacy'
 
 const POSTHOG_KEY = 'phc_wVUY4kf7cB9GCtKztaQ4dk6ooYU8QaagC88breDYcgaj'
 const POSTHOG_HOST = 'https://us.i.posthog.com'
@@ -12,44 +16,6 @@ type Feature =
   | `view_${ResultView}`
 
 let clientPromise: Promise<PostHog | null> | null = null
-
-const PRIVATE_URL = /\b(?:blob:|data:image\/)[^\s"')]+/gi
-
-function redactPrivateUrls(value: unknown): unknown {
-  if (typeof value === 'string') {
-    return value.replace(PRIVATE_URL, '[private image URL]')
-  }
-  if (Array.isArray(value)) return value.map(redactPrivateUrls)
-  if (value && typeof value === 'object') {
-    return Object.fromEntries(
-      Object.entries(value).map(([key, nested]) => [
-        key,
-        redactPrivateUrls(nested),
-      ]),
-    )
-  }
-  return value
-}
-
-function safeProperties(properties: Properties | undefined) {
-  if (!properties) return undefined
-  const sanitized = redactPrivateUrls(properties) as Properties
-  delete sanitized.$current_url
-  delete sanitized.$referrer
-  delete sanitized.$initial_current_url
-  delete sanitized.$initial_referrer
-  return sanitized
-}
-
-function stripUrls(capture: CaptureResult | null) {
-  if (!capture) return null
-  return {
-    ...capture,
-    properties: safeProperties(capture.properties) ?? {},
-    $set: safeProperties(capture.$set),
-    $set_once: safeProperties(capture.$set_once),
-  }
-}
 
 function safeError(error: unknown) {
   if (!(error instanceof Error)) {
@@ -92,7 +58,7 @@ function getClient(): Promise<PostHog | null> {
           advanced_only_evaluate_survey_feature_flags: true,
           person_profiles: 'never',
           persistence: 'localStorage',
-          before_send: stripUrls,
+          before_send: sanitizeCapture,
         })
         return posthog
       })
