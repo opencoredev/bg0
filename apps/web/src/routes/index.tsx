@@ -2,6 +2,7 @@ import { createFileRoute, useLoaderData } from '@tanstack/react-router'
 import { Check } from 'lucide-react'
 import { type ComponentType, useEffect, useState } from 'react'
 
+import { ComparePreview } from '#/components/compare-preview'
 import { GitHubIcon } from '#/components/icons'
 import { Button } from '#/components/ui/button'
 import { Card, CardDescription, CardTitle } from '#/components/ui/card'
@@ -318,14 +319,12 @@ function StageCard({
 function PreviewFrame({
   className,
   children,
-  ...props
 }: {
   className?: string
   children: React.ReactNode
-} & React.ComponentPropsWithoutRef<'div'>) {
+}) {
   return (
     <div
-      {...props}
       className={
         'relative m-2 h-[200px] overflow-hidden rounded-[10px] border border-border-subtle bg-background sm:h-60 ' +
         (className ?? '')
@@ -364,149 +363,6 @@ function DropPreview() {
       >
         <path d="M2 1l14 9-6 1.5L13.5 18 10 19.5 6.5 13 2 16z" />
       </svg>
-    </PreviewFrame>
-  )
-}
-
-function ComparePreview() {
-  const [position, setPosition] = useState(50)
-  const [dragging, setDragging] = useState(false)
-  const [peeking, setPeeking] = useState(false)
-
-  const moveToPointer = (
-    event: React.PointerEvent<HTMLDivElement>,
-  ) => {
-    const bounds = event.currentTarget.getBoundingClientRect()
-    const next = ((event.clientX - bounds.left) / bounds.width) * 100
-    setPosition(Math.min(100, Math.max(0, next)))
-  }
-
-  const moveBy = (delta: number) => {
-    setPosition((current) => Math.min(100, Math.max(0, current + delta)))
-  }
-
-  return (
-    <PreviewFrame
-      role="slider"
-      tabIndex={0}
-      aria-label="Compare the original image with the background-removed result"
-      aria-valuemin={0}
-      aria-valuemax={100}
-      aria-valuenow={Math.round(position)}
-      aria-valuetext={`${Math.round(position)}% original visible`}
-      data-view="compare"
-      data-peek={peeking ? 'true' : undefined}
-      data-dragging={dragging ? 'true' : undefined}
-      data-instant={peeking || dragging ? 'true' : undefined}
-      className="compare cursor-ew-resize touch-none select-none bg-checker outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-      style={{ '--wipe-pos': `${position}%` } as React.CSSProperties}
-      onPointerDown={(event) => {
-        if (event.button !== 0) return
-        event.currentTarget.focus()
-        event.currentTarget.setPointerCapture(event.pointerId)
-        setDragging(true)
-        moveToPointer(event)
-      }}
-      onPointerMove={(event) => {
-        if (!event.currentTarget.hasPointerCapture(event.pointerId)) return
-        moveToPointer(event)
-      }}
-      onPointerUp={(event) => {
-        if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-          event.currentTarget.releasePointerCapture(event.pointerId)
-        }
-        setDragging(false)
-      }}
-      onPointerCancel={() => setDragging(false)}
-      onLostPointerCapture={() => setDragging(false)}
-      onKeyDown={(event) => {
-        const step = event.shiftKey ? 10 : 3
-        if (event.key === 'ArrowLeft') {
-          event.preventDefault()
-          moveBy(-step)
-        } else if (event.key === 'ArrowRight') {
-          event.preventDefault()
-          moveBy(step)
-        } else if (event.key === 'Home') {
-          event.preventDefault()
-          setPosition(0)
-        } else if (event.key === 'End') {
-          event.preventDefault()
-          setPosition(100)
-        } else if (event.code === 'Space') {
-          event.preventDefault()
-          setPeeking(true)
-        }
-      }}
-      onKeyUp={(event) => {
-        if (event.code !== 'Space') return
-        event.preventDefault()
-        setPeeking(false)
-      }}
-      onBlur={() => setPeeking(false)}
-    >
-      <img
-        src="/samples/cat-bg0.webp"
-        alt="The same cat with its background removed"
-        width={768}
-        height={512}
-        loading="lazy"
-        draggable={false}
-        className="absolute inset-0 size-full object-cover"
-      />
-      <img
-        src="/samples/cat.webp"
-        alt=""
-        width={768}
-        height={512}
-        loading="lazy"
-        draggable={false}
-        className="compare-source absolute inset-0 size-full object-cover"
-      />
-      <div
-        aria-hidden="true"
-        className="compare-line compare-fade absolute inset-y-0 w-0.5 -translate-x-1/2 bg-wipe"
-      />
-      <div
-        aria-hidden="true"
-        className="compare-handle compare-fade absolute top-1/2 flex size-9 items-center justify-center gap-[3px] rounded-full border border-border bg-primary text-primary-foreground shadow-[0_2px_8px_rgba(0,0,0,0.6)]"
-      >
-        <svg
-          width="5"
-          height="9"
-          viewBox="0 0 6 10"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          aria-hidden="true"
-        >
-          <path d="M5 1 1 5l4 4" />
-        </svg>
-        <svg
-          width="5"
-          height="9"
-          viewBox="0 0 6 10"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          aria-hidden="true"
-        >
-          <path d="m1 1 4 4-4 4" />
-        </svg>
-      </div>
-      <span className="compare-fade absolute top-2.5 left-2.5 hidden rounded bg-black/55 px-1.5 py-[3px] font-mono text-[10px] tracking-[0.08em] text-white sm:block">
-        BEFORE
-      </span>
-      <span className="compare-fade absolute top-2.5 right-2.5 hidden rounded bg-black/55 px-1.5 py-[3px] font-mono text-[10px] tracking-[0.08em] text-white sm:block">
-        AFTER
-      </span>
-      <span className="compare-fade absolute right-2.5 bottom-2.5 hidden rounded bg-black/55 px-1.5 py-[3px] font-mono text-[10px] text-white/70 sm:block">
-        1.8s · WebGPU
-      </span>
     </PreviewFrame>
   )
 }
