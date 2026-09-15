@@ -6,12 +6,11 @@ import {
 import { BackgroundRemovalError, normalizeError } from './errors'
 import {
   decodeImage,
-  findRefinementCrop,
   inspectMask,
-  type MaskRefinement,
   maskToPng,
   validateImage,
 } from './image'
+import { createMaskRefinement } from './refinement'
 
 export {
   BackgroundRemovalError,
@@ -162,36 +161,20 @@ export async function removeBackground(
       throw new Error('The model returned an invalid alpha mask')
     }
 
-    let refinement: MaskRefinement | undefined
-    if (quality === 'quality') {
-      const crop = findRefinementCrop(
-        inference.alpha,
-        inference.maskWidth,
-        inference.maskHeight,
-        source.width,
-        source.height,
-      )
-      if (crop) {
-        throwIfCancelled(options.signal)
+    const refinement = await createMaskRefinement({
+      quality,
+      source,
+      base: inference,
+      signal: options.signal,
+      onRefining: () => {
         notify({
           stage: 'processing',
           progress: 0.84,
           message: 'Refining fine details…',
         })
-        const croppedSource = await source
-          .clone()
-          .crop([crop.left, crop.top, crop.right, crop.bottom])
-        const refined = await runInference(engine, croppedSource)
-        if (refined.inspection.valid && refined.inspection.hasForegroundSignal) {
-          refinement = {
-            mask: refined.alpha,
-            maskWidth: refined.maskWidth,
-            maskHeight: refined.maskHeight,
-            crop,
-          }
-        }
-      }
-    }
+      },
+      infer: (croppedSource) => runInference(engine, croppedSource),
+    })
 
     notify({ stage: 'finishing', progress: 0.92, message: 'Finishing edges…' })
     const blob = await maskToPng(
