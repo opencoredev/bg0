@@ -100,7 +100,8 @@ function clipboardImagesSupported() {
 }
 
 export function Remover() {
-  const inputRef = useRef<HTMLInputElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const photoInputRef = useRef<HTMLInputElement>(null)
   const abortController = useRef<AbortController | null>(null)
   const latestState = useRef<State>({ status: 'idle' })
   const toastId = useRef(0)
@@ -217,13 +218,15 @@ export function Remover() {
   const reset = useCallback(() => {
     abortController.current?.abort()
     cleanupUrls(latestState.current)
-    if (inputRef.current) inputRef.current.value = ''
+    if (fileInputRef.current) fileInputRef.current.value = ''
+    if (photoInputRef.current) photoInputRef.current.value = ''
     setState({ status: 'idle' })
     setAnnouncement('Ready for the next image.')
     captureFeatureUsed('start_another_image')
   }, [])
 
-  const openPicker = useCallback(() => inputRef.current?.click(), [])
+  const openFilePicker = useCallback(() => fileInputRef.current?.click(), [])
+  const openPhotoPicker = useCallback(() => photoInputRef.current?.click(), [])
 
   const download = useCallback(() => {
     const current = latestState.current
@@ -340,7 +343,7 @@ export function Remover() {
 
       if (isModifier(event) && key === 'o') {
         event.preventDefault()
-        openPicker()
+        openFilePicker()
         return
       }
       if (key === 'escape' && current.status !== 'idle') {
@@ -379,7 +382,7 @@ export function Remover() {
       window.removeEventListener('keydown', onKeyDown)
       window.removeEventListener('keyup', onKeyUp)
     }
-  }, [openPicker, reset, download, copyResult])
+  }, [openFilePicker, reset, download, copyResult])
 
   const requestCompare = useCallback(() => {
     setView('compare')
@@ -429,7 +432,7 @@ export function Remover() {
             <Button
               type="button"
               size="lg"
-              onClick={openPicker}
+              onClick={openFilePicker}
               className="hidden sm:inline-flex"
             >
               Choose image
@@ -452,7 +455,7 @@ export function Remover() {
                 type="button"
                 size="xl"
                 className="w-full"
-                onClick={openPicker}
+                onClick={openPhotoPicker}
               >
                 <Camera aria-hidden="true" /> Choose a photo
               </Button>
@@ -471,7 +474,7 @@ export function Remover() {
                   variant="secondary"
                   size="lg"
                   className="h-11"
-                  onClick={openPicker}
+                  onClick={openFilePicker}
                 >
                   <FolderOpen aria-hidden="true" /> Files
                 </Button>
@@ -628,12 +631,19 @@ export function Remover() {
       </div>
 
       <input
-        ref={inputRef}
+        ref={photoInputRef}
         type="file"
         accept={ACCEPT_ATTR}
         className="sr-only"
         onChange={(event) => selectFiles(event.target.files, 'picker')}
-        aria-label="Choose an image to remove its background"
+        aria-label="Choose a photo"
+      />
+      <input
+        ref={fileInputRef}
+        type="file"
+        className="sr-only"
+        onChange={(event) => selectFiles(event.target.files, 'picker')}
+        aria-label="Choose an image file to remove its background"
       />
       <p className="sr-only" aria-live="polite">
         {announcement}
@@ -650,7 +660,7 @@ export function Remover() {
           type="button"
           size="xl"
           className="w-full shadow-[0_12px_32px_rgba(0,0,0,0.6)]"
-          onClick={openPicker}
+          onClick={openPhotoPicker}
           tabIndex={pickerOffscreen ? 0 : -1}
         >
           <Camera aria-hidden="true" /> Choose a photo
