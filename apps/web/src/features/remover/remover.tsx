@@ -47,7 +47,12 @@ type State =
 const ACCEPTED_TYPES = ['image/png', 'image/jpeg', 'image/webp']
 const ACCEPT_ATTR = ACCEPTED_TYPES.join(',')
 const CLIPBOARD_TIMEOUT_MS = 1500
+const IPHONE_USER_AGENT = /\biPhone\b/i
 type InputMethod = 'drop' | 'paste' | 'picker'
+
+export function isIPhone(userAgent: string): boolean {
+  return IPHONE_USER_AGENT.test(userAgent)
+}
 
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -113,8 +118,13 @@ export function Remover() {
   const [copied, setCopied] = useState(false)
   const [toast, setToast] = useState<ToastMessage | null>(null)
   const [announcement, setAnnouncement] = useState('')
+  const [showIPhoneWarning, setShowIPhoneWarning] = useState(false)
   const pickerRef = useRef<HTMLDivElement>(null)
   const [pickerOffscreen, setPickerOffscreen] = useState(false)
+
+  useEffect(() => {
+    setShowIPhoneWarning(isIPhone(navigator.userAgent))
+  }, [])
 
   useEffect(() => {
     latestState.current = state
@@ -484,17 +494,19 @@ export function Remover() {
                 PNG, JPG, WebP · free, no account
               </p>
             </div>
-            <p className="relative z-10 flex max-w-[460px] items-start justify-center gap-1.5 text-center text-[11px] leading-4 text-muted-foreground">
-              <TriangleAlert
-                aria-hidden="true"
-                className="mt-0.5 size-3.5 shrink-0"
-              />
-              <span>
-                Safari on iPhone and iPad may reload during local processing
-                because iOS limits browser memory. For the most reliable
-                experience, use a desktop computer.
-              </span>
-            </p>
+            {showIPhoneWarning && (
+              <p className="relative z-10 flex max-w-[460px] items-start justify-center gap-1.5 text-center text-[11px] leading-4 text-muted-foreground">
+                <TriangleAlert
+                  aria-hidden="true"
+                  className="mt-0.5 size-3.5 shrink-0"
+                />
+                <span>
+                  Browsers on iPhone may reload during local processing because
+                  iOS limits browser memory. For the most reliable experience,
+                  use a desktop computer.
+                </span>
+              </p>
+            )}
           </div>
         )}
 

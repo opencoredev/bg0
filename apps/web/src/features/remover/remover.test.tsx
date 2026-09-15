@@ -1,8 +1,8 @@
 import { afterAll, afterEach, describe, expect, mock, test } from 'bun:test'
 import { GlobalRegistrator } from '@happy-dom/global-registrator'
-import { cleanup, fireEvent, render } from '@testing-library/react'
+import { cleanup, fireEvent, render, waitFor } from '@testing-library/react'
 
-import { Remover } from './remover'
+import { isIPhone, Remover } from './remover'
 
 GlobalRegistrator.register()
 
@@ -16,6 +16,52 @@ globalThis.IntersectionObserver =
 
 afterEach(cleanup)
 afterAll(() => GlobalRegistrator.unregister())
+
+const IPHONE_SAFARI_USER_AGENT =
+  'Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 Version/27.0 Mobile/15E148 Safari/604.1'
+
+const MAC_SAFARI_USER_AGENT =
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Version/27.0 Safari/605.1.15'
+
+describe('iPhone memory warning', () => {
+  test('detects iPhone without treating Mac or iPad as iPhone', () => {
+    expect(isIPhone(IPHONE_SAFARI_USER_AGENT)).toBe(true)
+    expect(isIPhone(MAC_SAFARI_USER_AGENT)).toBe(false)
+    expect(
+      isIPhone(
+        'Mozilla/5.0 (iPad; CPU OS 18_7 like Mac OS X) AppleWebKit/605.1.15 Version/27.0 Mobile/15E148 Safari/604.1',
+      ),
+    ).toBe(false)
+  })
+
+  test('renders only for an iPhone browser', async () => {
+    const originalUserAgent = navigator.userAgent
+
+    try {
+      Object.defineProperty(navigator, 'userAgent', {
+        configurable: true,
+        value: MAC_SAFARI_USER_AGENT,
+      })
+      const desktopView = render(<Remover />)
+      expect(desktopView.queryByText(/iOS limits browser memory/)).toBeNull()
+      desktopView.unmount()
+
+      Object.defineProperty(navigator, 'userAgent', {
+        configurable: true,
+        value: IPHONE_SAFARI_USER_AGENT,
+      })
+      const iPhoneView = render(<Remover />)
+      await waitFor(() => {
+        expect(iPhoneView.getByText(/iOS limits browser memory/)).toBeTruthy()
+      })
+    } finally {
+      Object.defineProperty(navigator, 'userAgent', {
+        configurable: true,
+        value: originalUserAgent,
+      })
+    }
+  })
+})
 
 describe('Remover image pickers', () => {
   test('keeps photo and file picker actions distinct across entry points', () => {
