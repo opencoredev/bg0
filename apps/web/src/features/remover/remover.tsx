@@ -12,6 +12,7 @@ import {
   Download,
   FolderOpen,
   RotateCcw,
+  TriangleAlert,
   X,
 } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -480,16 +481,22 @@ export function Remover() {
                 PNG, JPG, WebP · free, no account
               </p>
             </div>
+            <p className="relative z-10 flex max-w-[460px] items-start justify-center gap-1.5 text-center text-[11px] leading-4 text-muted-foreground">
+              <TriangleAlert
+                aria-hidden="true"
+                className="mt-0.5 size-3.5 shrink-0"
+              />
+              <span>
+                Safari on iPhone and iPad may reload during local processing
+                because iOS limits browser memory. For the most reliable
+                experience, use a desktop computer.
+              </span>
+            </p>
           </div>
         )}
 
         {state.status === 'processing' && (
           <div className="t-stage relative flex min-h-[220px] items-center justify-center bg-checker sm:min-h-[400px]">
-            <img
-              src={state.sourceUrl}
-              alt="Selected source"
-              className="max-h-[400px] w-full object-contain opacity-40 sm:max-h-[520px]"
-            />
             <div className="absolute inset-x-0 top-0 h-0.5 bg-border-subtle">
               <div
                 className="h-full bg-wipe transition-[width] duration-(--duration-medium) ease-(--ease-smooth-out)"

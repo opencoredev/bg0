@@ -30,6 +30,51 @@ export async function decodeImage(input: Blob): Promise<ImageBitmap> {
   }
 }
 
+export interface PreparedInferenceImage {
+  data: Uint8ClampedArray
+  width: number
+  height: number
+  sourceWidth: number
+  sourceHeight: number
+}
+
+/**
+ * Decode the source before the model is loaded, then immediately reduce it to
+ * the model's fixed input size. Keeping a full-resolution phone photo alive
+ * while ONNX initializes can push memory-constrained browsers over their tab
+ * limit even when the compressed upload itself is small.
+ */
+export async function prepareImageForInference(
+  input: Blob,
+  width = 512,
+  height = 512,
+): Promise<PreparedInferenceImage> {
+  const image = await decodeImage(input)
+  try {
+    const canvas = document.createElement('canvas')
+    canvas.width = width
+    canvas.height = height
+    const context = canvas.getContext('2d', { willReadFrequently: true })
+    if (!context) throw new Error('Canvas is unavailable')
+    context.drawImage(image, 0, 0, width, height)
+    const data = context.getImageData(0, 0, width, height).data
+
+    // Release the canvas backing store as soon as its pixels have been copied.
+    canvas.width = 0
+    canvas.height = 0
+
+    return {
+      data,
+      width,
+      height,
+      sourceWidth: image.width,
+      sourceHeight: image.height,
+    }
+  } finally {
+    image.close()
+  }
+}
+
 export interface MaskInspection {
   valid: boolean
   hasForegroundSignal: boolean

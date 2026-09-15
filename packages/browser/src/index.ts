@@ -4,7 +4,17 @@ import {
   isIndexedDbAvailable,
 } from './cache'
 import { BackgroundRemovalError, normalizeError } from './errors'
-import { decodeImage, inspectMask, maskToPng, validateImage } from './image'
+import {
+  decodeImage,
+  inspectMask,
+  maskToPng,
+  prepareImageForInference,
+  validateImage,
+} from './image'
+import {
+  canUseOnnxWebGpu,
+  shouldUseSingleThreadedWasm,
+} from './runtime'
 
 export {
   BackgroundRemovalError,
@@ -44,9 +54,9 @@ const MODEL_ID = 'studioludens/birefnet-lite-512'
 const MODEL_REVISION = '4a3c40c36c94093cc1e724d9ea428b8fa4b57dc7'
 const MODEL_BASE_URL = `https://huggingface.co/${MODEL_ID}/resolve/${MODEL_REVISION}`
 const WEBGPU_FAILURE_KEY = `bg0:webgpu-failure:${MODEL_REVISION}`
-// Size of onnx/model.onnx at the pinned revision, used to weight progress
+// Size of onnx/model_fp16.onnx at the pinned revision, used to weight progress
 // when a response arrives without a Content-Length.
-const MODEL_BYTES = 191_877_254
+const MODEL_BYTES = 98_484_532
 
 type TensorLike = {
   data: Float32Array | Uint8Array | Int32Array | BigInt64Array
@@ -67,8 +77,11 @@ const enginePromises: Partial<Record<ExecutionProvider, Promise<Engine>>> = {}
 let webgpuUsableForSession = true
 
 export function getBrowserCapabilities(): BrowserCapabilities {
+  const hasNavigatorGpu = typeof navigator !== 'undefined' && 'gpu' in navigator
   return {
-    webgpu: typeof navigator !== 'undefined' && 'gpu' in navigator,
+    webgpu:
+      typeof navigator !== 'undefined' &&
+      canUseOnnxWebGpu(navigator.userAgent, hasNavigatorGpu),
     wasm: true,
   }
 }
@@ -98,21 +111,25 @@ export async function removeBackground(
     throwIfCancelled(options.signal)
     validateImage(input)
     notify({ stage: 'preparing', progress: 0.03, message: 'Preparing image…' })
-    const image = await decodeImage(input)
-    decodedImage = image
+    const preparedImage = await prepareImageForInference(input)
     throwIfCancelled(options.signal)
 
     const preferredProvider = getPreferredProvider()
-    const modelIsCached = await isModelCached(preferredProvider)
-    let engine = await getPreferredEngine(preferredProvider, (progress) => {
-      notify({
-        stage: modelIsCached ? 'preparing' : 'downloading',
-        progress: 0.08 + progress * 0.58,
-        message: modelIsCached
-          ? 'Loading cached model…'
-          : 'Downloading local model…',
-      })
-    })
+    const modelIsCached = await isModelCached()
+    let engine = await getPreferredEngine(
+      preferredProvider,
+      (progress, initializing) => {
+        notify({
+          stage: modelIsCached || initializing ? 'preparing' : 'downloading',
+          progress: 0.08 + progress * 0.58,
+          message: initializing
+            ? 'Starting local model…'
+            : modelIsCached
+              ? 'Loading cached model…'
+              : 'Downloading local model…',
+        })
+      },
+    )
     throwIfCancelled(options.signal)
 
     notify({
@@ -121,7 +138,12 @@ export async function removeBackground(
       message: 'Removing background…',
     })
     const { RawImage } = await import('@huggingface/transformers')
-    const source = await RawImage.fromBlob(input)
+    const source = new RawImage(
+      preparedImage.data,
+      preparedImage.width,
+      preparedImage.height,
+      4,
+    )
     let inference = await runInference(engine, source)
 
     if (
@@ -135,11 +157,13 @@ export async function removeBackground(
         progress: 0.74,
         message: 'Switching to compatibility mode…',
       })
-      engine = await getEngine('wasm', (progress) => {
+      engine = await getEngine('wasm', (progress, initializing) => {
         notify({
-          stage: 'downloading',
+          stage: initializing ? 'preparing' : 'downloading',
           progress: 0.74 + progress * 0.14,
-          message: 'Preparing compatibility mode…',
+          message: initializing
+            ? 'Starting compatibility mode…'
+            : 'Preparing compatibility mode…',
         })
       })
       throwIfCancelled(options.signal)
@@ -156,6 +180,8 @@ export async function removeBackground(
     }
 
     notify({ stage: 'finishing', progress: 0.92, message: 'Finishing edges…' })
+    const image = await decodeImage(input)
+    decodedImage = image
     const blob = await maskToPng(
       image,
       inference.alpha,
@@ -167,8 +193,8 @@ export async function removeBackground(
 
     return {
       blob,
-      width: source.width,
-      height: source.height,
+      width: preparedImage.sourceWidth,
+      height: preparedImage.sourceHeight,
       provider: engine.provider,
       quality,
       durationMs: Math.round(performance.now() - startedAt),
@@ -182,7 +208,7 @@ export async function removeBackground(
 
 async function getPreferredEngine(
   preferred: ExecutionProvider,
-  onDownload: (progress: number) => void,
+  onDownload: (progress: number, initializing: boolean) => void,
 ): Promise<Engine> {
   try {
     return await getEngine(preferred, onDownload)
@@ -203,9 +229,8 @@ function getPreferredProvider(): ExecutionProvider {
   return getBrowserCapabilities().webgpu && canTryWebgpu() ? 'webgpu' : 'wasm'
 }
 
-async function isModelCached(provider: ExecutionProvider): Promise<boolean> {
-  const filename = provider === 'webgpu' ? 'model_fp16.onnx' : 'model.onnx'
-  const url = `${MODEL_BASE_URL}/onnx/${filename}`
+async function isModelCached(): Promise<boolean> {
+  const url = `${MODEL_BASE_URL}/onnx/model_fp16.onnx`
   try {
     if (typeof caches !== 'undefined') {
       return Boolean(await (await caches.open('transformers-cache')).match(url))
@@ -239,7 +264,7 @@ function rememberWebgpuFailure(): void {
 
 async function getEngine(
   provider: ExecutionProvider,
-  onDownload: (progress: number) => void,
+  onDownload: (progress: number, initializing: boolean) => void,
 ): Promise<Engine> {
   if (!enginePromises[provider]) {
     enginePromises[provider] = loadEngine(provider, onDownload)
@@ -291,7 +316,9 @@ async function runInference(engine: Engine, source: unknown) {
  * even announced. This weights every file by its size, treats the model file
  * as the bulk of the work, and never lets the figure go backwards.
  */
-function createDownloadTracker(onDownload: (progress: number) => void) {
+function createDownloadTracker(
+  onDownload: (progress: number, initializing: boolean) => void,
+) {
   const files = new Map<string, { loaded: number; total: number }>()
   let reported = 0
 
@@ -315,7 +342,7 @@ function createDownloadTracker(onDownload: (progress: number) => void) {
     const value = total > 0 ? loaded / total : 0
     if (value > reported) {
       reported = value
-      onDownload(Math.min(1, value))
+      onDownload(Math.min(1, value), false)
     }
   }
 
@@ -346,16 +373,27 @@ function createDownloadTracker(onDownload: (progress: number) => void) {
       return
     }
     report()
+    if (data.status === 'done' && data.file.endsWith('.onnx')) {
+      onDownload(1, true)
+    }
   }
 }
 
 async function loadEngine(
   provider: ExecutionProvider,
-  onDownload: (progress: number) => void,
+  onDownload: (progress: number, initializing: boolean) => void,
 ): Promise<Engine> {
   const { AutoModel, AutoProcessor, env } = await import(
     '@huggingface/transformers'
   )
+  if (
+    provider === 'wasm' &&
+    typeof navigator !== 'undefined' &&
+    env.backends.onnx.wasm &&
+    shouldUseSingleThreadedWasm(navigator.userAgent)
+  ) {
+    env.backends.onnx.wasm.numThreads = 1
+  }
   // The Cache API only exists in secure contexts. Fall back to IndexedDB so
   // the model is still cached on plain-http previews and older browsers.
   if (typeof caches !== 'undefined') {
@@ -378,7 +416,7 @@ async function loadEngine(
   const model = (await AutoModel.from_pretrained(MODEL_ID, {
     revision: MODEL_REVISION,
     device: provider,
-    dtype: provider === 'webgpu' ? 'fp16' : 'fp32',
+    dtype: 'fp16',
     progress_callback: progressCallback,
   })) as unknown as ModelRunner
   return { model, processor, provider }
