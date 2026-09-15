@@ -11,6 +11,19 @@ bg0DocsPageview();document.addEventListener("astro:page-load",bg0DocsPageview);
 }
 `
 
+// Seed the docs theme key from the app's key so a manual choice on bg0.dev
+// carries into /docs. Runs after Blume's theme script, so it must also fix
+// data-theme on the root element directly.
+const themeSeedScript = String.raw`
+try {
+  var t = localStorage.getItem('bg0-theme');
+  if ((t === 'light' || t === 'dark') && !localStorage.getItem('blume-theme')) {
+    localStorage.setItem('blume-theme', t);
+    document.documentElement.dataset.theme = t;
+  }
+} catch (_) {}
+`
+
 const productUrl = process.env.BG0_PRODUCT_URL ?? 'https://bg0.dev'
 
 export default defineConfig({
@@ -36,7 +49,9 @@ export default defineConfig({
     codeBlocks: { theme: { light: 'github-light', dark: 'github-dark' } },
   },
   search: { provider: 'orama' },
-  analytics: { scripts: [{ content: posthogScript }] },
+  analytics: {
+    scripts: [{ content: themeSeedScript }, { content: posthogScript }],
+  },
   ai: { llmsTxt: true },
   seo: { sitemap: true, robots: true, og: { enabled: true } },
   deployment: { output: 'static', site: 'https://bg0.dev', base: '/docs' },

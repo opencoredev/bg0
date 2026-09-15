@@ -36,7 +36,7 @@ const STRUCTURED_DATA = JSON.stringify({
   },
 })
 
-const THEME_SCRIPT = `(function(){try{var key='bg0-theme';var saved=localStorage.getItem(key);var theme=saved==='light'||saved==='dark'?saved:(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');var root=document.documentElement;root.classList.toggle('dark',theme==='dark');root.style.colorScheme=theme;var meta=document.querySelector('meta[name="theme-color"]');if(meta)meta.content=theme==='dark'?'#0a0a0a':'#ffffff'}catch(_){}})()`
+const THEME_SCRIPT = `(function(){try{var saved=localStorage.getItem('blume-theme')||localStorage.getItem('bg0-theme');var theme=saved==='light'||saved==='dark'?saved:(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');var root=document.documentElement;root.classList.toggle('dark',theme==='dark');root.style.colorScheme=theme;var meta=document.querySelector('meta[name="theme-color"]');if(meta)meta.content=theme==='dark'?'#0a0a0a':'#ffffff'}catch(_){}})()`
 
 export const Route = createRootRoute({
   loader: async () => ({ stars: await getStarCount() }),

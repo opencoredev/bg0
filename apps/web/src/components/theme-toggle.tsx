@@ -4,6 +4,8 @@ import { useEffect } from 'react'
 import { Button } from '#/components/ui/button'
 
 const STORAGE_KEY = 'bg0-theme'
+// The docs site (Blume) persists its choice under this key on the same origin.
+const DOCS_STORAGE_KEY = 'blume-theme'
 
 function applyTheme(theme: 'dark' | 'light') {
   const dark = theme === 'dark'
@@ -31,6 +33,7 @@ export function ThemeToggle() {
       ? 'light'
       : 'dark'
     window.localStorage.setItem(STORAGE_KEY, theme)
+    window.localStorage.setItem(DOCS_STORAGE_KEY, theme)
     applyTheme(theme)
   }
 

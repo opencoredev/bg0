@@ -204,7 +204,7 @@ function Home() {
               Want the same thing in your own app? The browser package is the
               engine behind this page.
             </p>
-            <Card className="flex flex-col gap-1 px-5 py-4 font-mono text-[13px] leading-6 text-muted-foreground sm:px-6">
+            <Card className="flex flex-col gap-1 border-code-border bg-code px-5 py-4 font-mono text-[13px] leading-6 text-code-foreground sm:px-6">
               <span>
                 <span className="text-syntax-flag">import</span>{' '}
                 {'{ removeBackground }'}{' '}
