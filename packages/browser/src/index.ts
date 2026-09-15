@@ -78,16 +78,14 @@ type Engine = {
   provider: ExecutionProvider
 }
 
-const enginePromises: Partial<Record<ExecutionProvider, Promise<Engine>>> = {}
-const engineProgressListeners: Partial<
-  Record<
-    ExecutionProvider,
-    Set<(progress: number, initializing: boolean) => void>
-  >
-> = {}
-const engineProgress: Partial<
-  Record<ExecutionProvider, { progress: number; initializing: boolean }>
-> = {}
+type EngineProgress = { progress: number; initializing: boolean }
+type EngineLoad = {
+  promise: Promise<Engine>
+  listeners: Set<(progress: number, initializing: boolean) => void>
+  progress?: EngineProgress
+}
+
+const engineLoads: Partial<Record<ExecutionProvider, EngineLoad>> = {}
 let webgpuUsableForSession = true
 
 export function getBrowserCapabilities(): BrowserCapabilities {
@@ -101,10 +99,8 @@ export function getBrowserCapabilities(): BrowserCapabilities {
 }
 
 export function clearModelCache(): void {
-  enginePromises.webgpu = undefined
-  enginePromises.wasm = undefined
-  engineProgress.webgpu = undefined
-  engineProgress.wasm = undefined
+  engineLoads.webgpu = undefined
+  engineLoads.wasm = undefined
   webgpuUsableForSession = true
   try {
     localStorage.removeItem(WEBGPU_FAILURE_KEY)
@@ -322,41 +318,44 @@ async function getEngine(
   provider: ExecutionProvider,
   onDownload: (progress: number, initializing: boolean) => void,
 ): Promise<Engine> {
-  const existingPromise = enginePromises[provider]
-  let listeners = engineProgressListeners[provider]
-  if (!listeners) {
-    listeners = new Set()
-    engineProgressListeners[provider] = listeners
+  let load = engineLoads[provider]
+  if (!load) {
+    const listeners: EngineLoad['listeners'] = new Set()
+    let currentLoad: EngineLoad
+    const promise = loadEngine(provider, (progress, initializing) => {
+      if (engineLoads[provider] !== currentLoad) return
+      currentLoad.progress = { progress, initializing }
+      for (const listener of currentLoad.listeners) {
+        notifyEngineProgress(listener, currentLoad.progress)
+      }
+    })
+    currentLoad = { promise, listeners }
+    load = currentLoad
+    engineLoads[provider] = load
   }
-  listeners.add(onDownload)
-  let enginePromise = existingPromise
-  if (enginePromise) {
-    const latest = engineProgress[provider]
-    if (latest) onDownload(latest.progress, latest.initializing)
-  } else {
-    enginePromise = loadEngine(
-      provider,
-      (progress, initializing) => {
-        engineProgress[provider] = { progress, initializing }
-        for (const listener of listeners) listener(progress, initializing)
-      },
-    )
-    enginePromises[provider] = enginePromise
-  }
+
+  load.listeners.add(onDownload)
   try {
-    const engine = await enginePromise
-    if (enginePromises[provider] === enginePromise) {
-      engineProgress[provider] = undefined
-    }
+    if (load.progress) notifyEngineProgress(onDownload, load.progress)
+    const engine = await load.promise
+    if (engineLoads[provider] === load) load.progress = undefined
     return engine
   } catch (error) {
-    if (enginePromises[provider] === enginePromise) {
-      enginePromises[provider] = undefined
-      engineProgress[provider] = undefined
-    }
+    if (engineLoads[provider] === load) engineLoads[provider] = undefined
     throw error
   } finally {
-    listeners.delete(onDownload)
+    load.listeners.delete(onDownload)
+  }
+}
+
+function notifyEngineProgress(
+  listener: (progress: number, initializing: boolean) => void,
+  progress: EngineProgress,
+): void {
+  try {
+    listener(progress.progress, progress.initializing)
+  } catch {
+    // Progress reporting is advisory and must not interrupt model loading.
   }
 }
 
