@@ -90,6 +90,12 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   })
 }
 
+function waitForNextPaint(): Promise<void> {
+  return new Promise((resolve) => {
+    requestAnimationFrame(() => window.setTimeout(resolve, 0))
+  })
+}
+
 function isModifier(event: KeyboardEvent) {
   return event.metaKey || event.ctrlKey
 }
@@ -192,6 +198,17 @@ export function Remover({
       })
 
       try {
+        // Give the browser a frame to paint the source before inference can
+        // occupy the main thread.
+        await waitForNextPaint()
+        if (
+          controller.signal.aborted ||
+          abortController.current !== controller ||
+          !mounted.current
+        ) {
+          return
+        }
+
         const result = await removeBackgroundImpl(file, {
           quality: 'quality',
           signal: controller.signal,
@@ -569,7 +586,16 @@ export function Remover({
         )}
 
         {state.status === 'processing' && (
-          <div className="t-stage relative flex min-h-[220px] items-center justify-center bg-checker sm:min-h-[400px]">
+          <div
+            aria-busy="true"
+            className="t-stage relative flex min-h-[220px] items-center justify-center bg-checker sm:min-h-[400px]"
+          >
+            <img
+              src={state.sourceUrl}
+              alt="Original being processed"
+              draggable={false}
+              className="absolute inset-0 size-full object-contain"
+            />
             <div className="absolute inset-x-0 top-0 h-0.5 bg-border-subtle">
               <div
                 className="h-full bg-wipe transition-[width] duration-(--duration-medium) ease-(--ease-smooth-out)"

@@ -88,6 +88,35 @@ describe('iPhone memory warning', () => {
 })
 
 describe('Remover image pickers', () => {
+  test('paints a pasted image before background removal starts', async () => {
+    const urls = trackObjectUrls()
+    const request = deferred<BackgroundRemovalResult>()
+    const remove = mock(
+      (_input: Blob, _options?: RemoveBackgroundOptions) => request.promise,
+    )
+    const view = render(<Remover removeBackgroundImpl={remove} />)
+
+    try {
+      const transfer = new DataTransfer()
+      transfer.items.add(
+        new File(['image'], 'clipboard.png', { type: 'image/png' }),
+      )
+
+      fireEvent.paste(window, { clipboardData: transfer })
+
+      const preview = view.getByRole('img', {
+        name: 'Original being processed',
+      })
+      expect(preview.getAttribute('src')).toBe('blob:test-1')
+      expect(view.getByText('Preparing…')).toBeTruthy()
+      expect(remove).not.toHaveBeenCalled()
+      await waitFor(() => expect(remove).toHaveBeenCalledTimes(1))
+    } finally {
+      view.unmount()
+      urls.restore()
+    }
+  })
+
   test('keeps photo and file picker actions distinct across entry points', () => {
     const view = render(<Remover />)
     const photoInput = view.getByLabelText('Choose a photo')
