@@ -45,8 +45,9 @@ function BrowserRemover() {
   useEffect(() => {
     let mounted = true
     void loadRemover?.().then(({ Remover, warmBackgroundRemovalModel }) => {
+      if (!mounted) return
       warmBackgroundRemovalModel()
-      if (mounted) setComponent(() => Remover)
+      setComponent(() => Remover)
     })
     return () => {
       mounted = false

@@ -85,6 +85,9 @@ const engineProgressListeners: Partial<
     Set<(progress: number, initializing: boolean) => void>
   >
 > = {}
+const engineProgress: Partial<
+  Record<ExecutionProvider, { progress: number; initializing: boolean }>
+> = {}
 let webgpuUsableForSession = true
 
 export function getBrowserCapabilities(): BrowserCapabilities {
@@ -100,6 +103,8 @@ export function getBrowserCapabilities(): BrowserCapabilities {
 export function clearModelCache(): void {
   enginePromises.webgpu = undefined
   enginePromises.wasm = undefined
+  engineProgress.webgpu = undefined
+  engineProgress.wasm = undefined
   webgpuUsableForSession = true
   try {
     localStorage.removeItem(WEBGPU_FAILURE_KEY)
@@ -317,26 +322,37 @@ async function getEngine(
   provider: ExecutionProvider,
   onDownload: (progress: number, initializing: boolean) => void,
 ): Promise<Engine> {
+  const existingPromise = enginePromises[provider]
   let listeners = engineProgressListeners[provider]
   if (!listeners) {
     listeners = new Set()
     engineProgressListeners[provider] = listeners
   }
   listeners.add(onDownload)
-  if (!enginePromises[provider]) {
-    enginePromises[provider] = loadEngine(
+  let enginePromise = existingPromise
+  if (enginePromise) {
+    const latest = engineProgress[provider]
+    if (latest) onDownload(latest.progress, latest.initializing)
+  } else {
+    enginePromise = loadEngine(
       provider,
       (progress, initializing) => {
+        engineProgress[provider] = { progress, initializing }
         for (const listener of listeners) listener(progress, initializing)
       },
     )
+    enginePromises[provider] = enginePromise
   }
-  const enginePromise = enginePromises[provider]
   try {
-    return await enginePromise
+    const engine = await enginePromise
+    if (enginePromises[provider] === enginePromise) {
+      engineProgress[provider] = undefined
+    }
+    return engine
   } catch (error) {
     if (enginePromises[provider] === enginePromise) {
       enginePromises[provider] = undefined
+      engineProgress[provider] = undefined
     }
     throw error
   } finally {
