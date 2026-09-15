@@ -2,7 +2,11 @@
   "$schema": "https://turbo.build/schema.json",
   "tasks": {
     "dev": { "cache": false, "persistent": true },
-    "build": { "dependsOn": ["^build"], "outputs": ["dist/**", ".output/**"] },
+    "build": {
+      "dependsOn": ["^build"],
+      "env": ["VITE_GOOGLE_SITE_VERIFICATION"],
+      "outputs": ["dist/**", ".output/**"]
+    },
     "test": { "dependsOn": ["^build"], "outputs": [] },
     "lint": { "dependsOn": ["^lint"] },
     "typecheck": { "dependsOn": ["^build", "^typecheck"] }

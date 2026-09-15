@@ -18,6 +18,9 @@ import appCss from '../styles.css?url'
 const DESCRIPTION =
   'Background removal that stays on your device. Drop an image, get a transparent PNG. Nothing is uploaded.'
 
+const GOOGLE_SITE_VERIFICATION = import.meta.env
+  .VITE_GOOGLE_SITE_VERIFICATION as string | undefined
+
 const STRUCTURED_DATA = JSON.stringify({
   '@context': 'https://schema.org',
   '@type': 'WebApplication',
@@ -44,6 +47,14 @@ export const Route = createRootRoute({
       { name: 'viewport', content: 'width=device-width, initial-scale=1' },
       { title: 'BG0 — Remove backgrounds locally' },
       { name: 'description', content: DESCRIPTION },
+      ...(GOOGLE_SITE_VERIFICATION
+        ? [
+            {
+              name: 'google-site-verification',
+              content: GOOGLE_SITE_VERIFICATION,
+            },
+          ]
+        : []),
       { name: 'theme-color', content: '#0a0a0a' },
       { name: 'color-scheme', content: 'light dark' },
       { property: 'og:type', content: 'website' },
