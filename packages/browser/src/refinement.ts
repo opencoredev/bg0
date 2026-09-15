@@ -16,6 +16,8 @@ export interface InferenceMask {
 interface RefinementOptions {
   quality: 'fast' | 'quality'
   source: RawImage
+  outputWidth: number
+  outputHeight: number
   base: InferenceMask
   signal?: AbortSignal
   onRefining: () => void
@@ -25,6 +27,8 @@ interface RefinementOptions {
 export async function createMaskRefinement({
   quality,
   source,
+  outputWidth,
+  outputHeight,
   base,
   signal,
   onRefining,
@@ -55,7 +59,12 @@ export async function createMaskRefinement({
       mask: refined.alpha,
       maskWidth: refined.maskWidth,
       maskHeight: refined.maskHeight,
-      crop,
+      crop: {
+        left: Math.floor((crop.left * outputWidth) / source.width),
+        top: Math.floor((crop.top * outputHeight) / source.height),
+        right: Math.ceil((crop.right * outputWidth) / source.width),
+        bottom: Math.ceil((crop.bottom * outputHeight) / source.height),
+      },
     }
   } catch {
     // Refinement is optional. Preserve the successful base mask unless the

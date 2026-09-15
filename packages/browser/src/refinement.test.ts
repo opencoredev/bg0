@@ -34,6 +34,8 @@ describe('createMaskRefinement', () => {
       await createMaskRefinement({
         quality: 'fast',
         source: source(),
+        outputWidth: 400,
+        outputHeight: 200,
         base: compactMask(),
         onRefining,
         infer,
@@ -45,12 +47,14 @@ describe('createMaskRefinement', () => {
       createMaskRefinement({
         quality: 'quality',
         source: source(),
+        outputWidth: 400,
+        outputHeight: 200,
         base: compactMask(),
         onRefining,
         infer,
       }),
     ).resolves.toMatchObject({
-      crop: { left: 25, top: 25, right: 75, bottom: 75 },
+      crop: { left: 100, top: 50, right: 300, bottom: 150 },
     })
     expect(infer).toHaveBeenCalledTimes(1)
     expect(onRefining).toHaveBeenCalledTimes(1)
@@ -65,6 +69,8 @@ describe('createMaskRefinement', () => {
       createMaskRefinement({
         quality: 'quality',
         source: source(),
+        outputWidth: 400,
+        outputHeight: 200,
         base: compactMask(),
         onRefining: () => undefined,
         infer,
@@ -80,6 +86,8 @@ describe('createMaskRefinement', () => {
       createMaskRefinement({
         quality: 'quality',
         source: source(),
+        outputWidth: 400,
+        outputHeight: 200,
         base: compactMask(),
         onRefining: () => undefined,
         infer: async () => ({ ...compactMask(), inspection }),
@@ -96,6 +104,8 @@ describe('createMaskRefinement', () => {
     const result = createMaskRefinement({
       quality: 'quality',
       source: source(),
+      outputWidth: 400,
+      outputHeight: 200,
       base: compactMask(),
       signal: controller.signal,
       onRefining: () => undefined,
