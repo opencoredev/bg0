@@ -79,6 +79,12 @@ type Engine = {
 }
 
 const enginePromises: Partial<Record<ExecutionProvider, Promise<Engine>>> = {}
+const engineProgressListeners: Partial<
+  Record<
+    ExecutionProvider,
+    Set<(progress: number, initializing: boolean) => void>
+  >
+> = {}
 let webgpuUsableForSession = true
 
 export function getBrowserCapabilities(): BrowserCapabilities {
@@ -101,6 +107,18 @@ export function clearModelCache(): void {
     // Storage can be unavailable in privacy modes. The in-memory reset remains useful.
   }
   void clearIndexedDbCache()
+}
+
+/**
+ * Download and initialize the model before the first image is selected.
+ * Concurrent calls share the same initialization work with removeBackground.
+ */
+export async function prepareBackgroundRemoval(): Promise<ExecutionProvider> {
+  const engine = await getPreferredEngine(
+    getPreferredProvider(),
+    () => undefined,
+  )
+  return engine.provider
 }
 
 export async function removeBackground(
@@ -299,14 +317,30 @@ async function getEngine(
   provider: ExecutionProvider,
   onDownload: (progress: number, initializing: boolean) => void,
 ): Promise<Engine> {
-  if (!enginePromises[provider]) {
-    enginePromises[provider] = loadEngine(provider, onDownload)
+  let listeners = engineProgressListeners[provider]
+  if (!listeners) {
+    listeners = new Set()
+    engineProgressListeners[provider] = listeners
   }
+  listeners.add(onDownload)
+  if (!enginePromises[provider]) {
+    enginePromises[provider] = loadEngine(
+      provider,
+      (progress, initializing) => {
+        for (const listener of listeners) listener(progress, initializing)
+      },
+    )
+  }
+  const enginePromise = enginePromises[provider]
   try {
-    return await enginePromises[provider]
+    return await enginePromise
   } catch (error) {
-    enginePromises[provider] = undefined
+    if (enginePromises[provider] === enginePromise) {
+      enginePromises[provider] = undefined
+    }
     throw error
+  } finally {
+    listeners.delete(onDownload)
   }
 }
 

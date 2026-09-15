@@ -3,6 +3,7 @@ import {
   type BackgroundRemovalResult,
   IMAGE_ACCEPT_ATTRIBUTE,
   type RemovalProgress,
+  prepareBackgroundRemoval,
   removeBackground,
   SUPPORTED_IMAGE_FORMAT_LABEL,
   SUPPORTED_IMAGE_MIME_TYPES,
@@ -58,6 +59,16 @@ interface RemoverProps {
 
 export function isIPhone(userAgent: string): boolean {
   return IPHONE_USER_AGENT.test(userAgent)
+}
+
+export function warmBackgroundRemovalModel(
+  userAgent = navigator.userAgent,
+  prepare = prepareBackgroundRemoval,
+): void {
+  if (isIPhone(userAgent)) return
+  void prepare().catch(() => {
+    // The normal processing path retries and presents a useful error if needed.
+  })
 }
 
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
@@ -549,9 +560,8 @@ export function Remover({
                   className="mt-0.5 size-3.5 shrink-0"
                 />
                 <span>
-                  Browsers on iPhone may reload during local processing because
-                  iOS limits browser memory. For the most reliable experience,
-                  use a desktop computer.
+                  Background removal probably won’t work on iPhone yet. We’re
+                  still figuring out why. Please use a desktop computer for now.
                 </span>
               </p>
             )}

@@ -4,9 +4,15 @@ import type {
   BackgroundRemovalResult,
   RemoveBackgroundOptions,
 } from '@bg0/browser'
-import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react'
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  waitFor,
+} from '@testing-library/react'
 
-import { isIPhone, Remover } from './remover'
+import { isIPhone, Remover, warmBackgroundRemovalModel } from './remover'
 
 GlobalRegistrator.register()
 
@@ -38,6 +44,16 @@ describe('iPhone memory warning', () => {
     ).toBe(false)
   })
 
+  test('does not warm the model on iPhone', () => {
+    const prepare = mock(() => Promise.resolve('wasm' as const))
+
+    warmBackgroundRemovalModel(IPHONE_SAFARI_USER_AGENT, prepare)
+    expect(prepare).not.toHaveBeenCalled()
+
+    warmBackgroundRemovalModel(MAC_SAFARI_USER_AGENT, prepare)
+    expect(prepare).toHaveBeenCalledTimes(1)
+  })
+
   test('renders only for an iPhone browser', async () => {
     const originalUserAgent = navigator.userAgent
 
@@ -47,7 +63,9 @@ describe('iPhone memory warning', () => {
         value: MAC_SAFARI_USER_AGENT,
       })
       const desktopView = render(<Remover />)
-      expect(desktopView.queryByText(/iOS limits browser memory/)).toBeNull()
+      expect(
+        desktopView.queryByText(/probably won’t work on iPhone/),
+      ).toBeNull()
       desktopView.unmount()
 
       Object.defineProperty(navigator, 'userAgent', {
@@ -56,7 +74,9 @@ describe('iPhone memory warning', () => {
       })
       const iPhoneView = render(<Remover />)
       await waitFor(() => {
-        expect(iPhoneView.getByText(/iOS limits browser memory/)).toBeTruthy()
+        expect(
+          iPhoneView.getByText(/probably won’t work on iPhone/),
+        ).toBeTruthy()
       })
     } finally {
       Object.defineProperty(navigator, 'userAgent', {
