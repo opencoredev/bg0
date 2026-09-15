@@ -12,7 +12,12 @@ import {
   waitFor,
 } from '@testing-library/react'
 
-import { isIPhone, Remover, warmBackgroundRemovalModel } from './remover'
+import {
+  isIPhone,
+  Remover,
+  waitForNextPaint,
+  warmBackgroundRemovalModel,
+} from './remover'
 
 GlobalRegistrator.register()
 
@@ -88,13 +93,49 @@ describe('iPhone memory warning', () => {
 })
 
 describe('Remover image pickers', () => {
+  test('waits for an animation frame and a following task', async () => {
+    let frame: FrameRequestCallback | undefined
+    let task: (() => void) | undefined
+    let settled = false
+    const paint = waitForNextPaint(
+      (callback) => {
+        frame = callback
+        return 1
+      },
+      (callback) => {
+        task = callback
+        return 1
+      },
+    ).then(() => {
+      settled = true
+    })
+
+    expect(frame).toBeDefined()
+    expect(task).toBeUndefined()
+    expect(settled).toBe(false)
+
+    frame?.(0)
+    expect(task).toBeDefined()
+    expect(settled).toBe(false)
+
+    task?.()
+    await paint
+    expect(settled).toBe(true)
+  })
+
   test('paints a pasted image before background removal starts', async () => {
     const urls = trackObjectUrls()
     const request = deferred<BackgroundRemovalResult>()
+    const paint = deferred<void>()
     const remove = mock(
       (_input: Blob, _options?: RemoveBackgroundOptions) => request.promise,
     )
-    const view = render(<Remover removeBackgroundImpl={remove} />)
+    const view = render(
+      <Remover
+        removeBackgroundImpl={remove}
+        waitForPaintImpl={() => paint.promise}
+      />,
+    )
 
     try {
       const transfer = new DataTransfer()
@@ -110,7 +151,8 @@ describe('Remover image pickers', () => {
       expect(preview.getAttribute('src')).toBe('blob:test-1')
       expect(view.getByText('Preparing…')).toBeTruthy()
       expect(remove).not.toHaveBeenCalled()
-      await waitFor(() => expect(remove).toHaveBeenCalledTimes(1))
+      await act(async () => paint.resolve())
+      expect(remove).toHaveBeenCalledTimes(1)
     } finally {
       view.unmount()
       urls.restore()

@@ -52,9 +52,11 @@ const CLIPBOARD_TIMEOUT_MS = 1500
 const IPHONE_USER_AGENT = /\biPhone\b/i
 type InputMethod = 'drop' | 'paste' | 'picker'
 type RemoveBackground = typeof removeBackground
+type WaitForPaint = () => Promise<void>
 
 interface RemoverProps {
   removeBackgroundImpl?: RemoveBackground
+  waitForPaintImpl?: WaitForPaint
 }
 
 export function isIPhone(userAgent: string): boolean {
@@ -90,9 +92,13 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   })
 }
 
-function waitForNextPaint(): Promise<void> {
+export function waitForNextPaint(
+  requestFrame: typeof requestAnimationFrame = requestAnimationFrame,
+  scheduleTask: (callback: () => void) => number = (callback) =>
+    window.setTimeout(callback, 0),
+): Promise<void> {
   return new Promise((resolve) => {
-    requestAnimationFrame(() => window.setTimeout(resolve, 0))
+    requestFrame(() => scheduleTask(resolve))
   })
 }
 
@@ -130,6 +136,7 @@ function clipboardImagesSupported() {
 
 export function Remover({
   removeBackgroundImpl = removeBackground,
+  waitForPaintImpl = waitForNextPaint,
 }: RemoverProps = {}) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const photoInputRef = useRef<HTMLInputElement>(null)
@@ -200,7 +207,7 @@ export function Remover({
       try {
         // Give the browser a frame to paint the source before inference can
         // occupy the main thread.
-        await waitForNextPaint()
+        await waitForPaintImpl()
         if (
           controller.signal.aborted ||
           abortController.current !== controller ||
@@ -288,7 +295,7 @@ export function Remover({
         }
       }
     },
-    [commitState, removeBackgroundImpl],
+    [commitState, removeBackgroundImpl, waitForPaintImpl],
   )
 
   const selectFiles = useCallback(
