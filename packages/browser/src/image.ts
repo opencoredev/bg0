@@ -185,6 +185,22 @@ function inspectImageSignature(
     if (UNSUPPORTED_ISO_IMAGE_BRANDS.has(majorBrand)) {
       return { kind: 'unsupported' }
     }
+
+    let hasStillCompatibleBrand = false
+    for (
+      let offset = headerSize + brandFieldsSize;
+      offset < declaredSize;
+      offset += 4
+    ) {
+      const compatibleBrand = ascii(bytes, offset, offset + 4)
+      if (UNSUPPORTED_ISO_IMAGE_BRANDS.has(compatibleBrand)) {
+        return { kind: 'unsupported' }
+      }
+      if (HEVC_STILL_IMAGE_BRANDS.has(compatibleBrand)) {
+        hasStillCompatibleBrand = true
+      }
+    }
+
     if (HEVC_STILL_IMAGE_BRANDS.has(majorBrand)) {
       return { kind: 'supported', format: 'heic' }
     }
@@ -192,17 +208,12 @@ function inspectImageSignature(
     // `mif1` is the generic still-image HEIF container. Its compatible brands
     // identify the codec; the four bytes after the major brand are the
     // numeric minor version.
-    if (majorBrand !== 'mif1') return { kind: 'unknown' }
-    for (
-      let offset = headerSize + brandFieldsSize;
-      offset < declaredSize;
-      offset += 4
-    ) {
-      if (HEVC_STILL_IMAGE_BRANDS.has(ascii(bytes, offset, offset + 4))) {
-        return { kind: 'supported', format: 'heic' }
-      }
+    if (majorBrand === 'mif1') {
+      return hasStillCompatibleBrand
+        ? { kind: 'supported', format: 'heic' }
+        : { kind: 'unsupported' }
     }
-    return { kind: 'unsupported' }
+    return { kind: 'unknown' }
   }
   return { kind: 'unknown' }
 }

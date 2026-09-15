@@ -178,6 +178,30 @@ describe('image format detection', () => {
     }
   })
 
+  test('rejects mixed still and unsupported compatible brands in any order', async () => {
+    const mixedContainers = [
+      isoMediaHeader(['heic', 'hevc']),
+      isoMediaHeader(['heic', 'avif']),
+      isoMediaHeader(['mif1', 'heic', 'hevc']),
+      isoMediaHeader(['mif1', 'hevc', 'heic']),
+      extendedIsoMediaHeader(['heic', 'hevc']),
+      extendedIsoMediaHeader(['mif1', 'heic', 'hevc']),
+      extendedIsoMediaHeader(['mif1', 'hevc', 'heic']),
+    ]
+
+    for (const container of mixedContainers) {
+      expect(sniffImageFormat(container)).toBeNull()
+      await expect(
+        detectImageFormat(
+          new File([blobPart(container)], 'photo.jpg', { type: 'image/jpeg' }),
+        ),
+      ).resolves.toBeNull()
+      await expect(
+        validateImage(new Blob([blobPart(container)], { type: 'image/heic' })),
+      ).rejects.toMatchObject({ code: 'unsupported-image' })
+    }
+  })
+
   test('complete unsupported containers override legacy metadata', async () => {
     const unsupportedContainers = [
       isoMediaHeader(['avif', 'mif1']),
