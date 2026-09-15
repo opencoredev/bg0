@@ -17,5 +17,8 @@ describe('package metadata', () => {
         expect(packageJson.files).toContain(topLevelDirectory)
       }
     }
+
+    expect(packageJson.files).toContain('LICENSE')
+    expect(packageJson.files).toContain('THIRD_PARTY_NOTICES.md')
   })
 })

@@ -8,11 +8,11 @@
   "scripts": {
     "dev": "vite dev --port 3000",
     "generate-routes": "tsr generate",
-    "build": "vite build",
+    "build": "vite build && bun scripts/copy-heic-license-materials.ts",
     "preview": "vite preview",
     "test": "bun test",
     "format": "biome format --write src vite.config.ts",
-    "lint": "biome lint src vite.config.ts",
+    "lint": "biome lint src scripts vite.config.ts",
     "check": "biome check src vite.config.ts",
     "typecheck": "tsc --noEmit"
   },

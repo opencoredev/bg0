@@ -1,26 +1,231 @@
 import { BackgroundRemovalError } from './errors'
 
 export const MAX_IMAGE_BYTES = 40 * 1024 * 1024
-const SUPPORTED_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp'])
+export const SUPPORTED_IMAGE_MIME_TYPES = [
+  'image/png',
+  'image/jpeg',
+  'image/webp',
+  'image/heic',
+  'image/heif',
+  'image/x-heic',
+  'image/x-heif',
+] as const
+export const IMAGE_ACCEPT_ATTRIBUTE = [
+  ...SUPPORTED_IMAGE_MIME_TYPES,
+  '.heic',
+  '.heif',
+  '.hif',
+].join(',')
+export const SUPPORTED_IMAGE_FORMAT_LABEL = 'PNG, JPG, WebP, HEIC, or HEIF'
 
-export function validateImage(input: Blob): void {
-  if (!SUPPORTED_TYPES.has(input.type)) {
-    throw new BackgroundRemovalError(
-      'unsupported-image',
-      'Choose a PNG, JPG, or WebP image.',
-    )
-  }
+export type SupportedImageFormat = 'jpeg' | 'png' | 'webp' | 'heic'
+
+type ImageSignatureInspection =
+  | { kind: 'supported'; format: SupportedImageFormat }
+  | { kind: 'unsupported' }
+  | { kind: 'unknown' }
+
+const MIME_FORMATS = new Map<string, SupportedImageFormat>([
+  ['image/jpeg', 'jpeg'],
+  ['image/jpg', 'jpeg'],
+  ['image/pjpeg', 'jpeg'],
+  ['image/png', 'png'],
+  ['image/webp', 'webp'],
+  ['image/heic', 'heic'],
+  ['image/heif', 'heic'],
+  ['image/x-heic', 'heic'],
+  ['image/x-heif', 'heic'],
+])
+const EXTENSION_FORMATS = new Map<string, SupportedImageFormat>([
+  ['jpg', 'jpeg'],
+  ['jpeg', 'jpeg'],
+  ['png', 'png'],
+  ['webp', 'webp'],
+  ['heic', 'heic'],
+  ['heif', 'heic'],
+  ['hif', 'heic'],
+])
+const GENERIC_MIME_TYPES = new Set([
+  '',
+  'application/octet-stream',
+  'application/binary',
+])
+const HEVC_STILL_IMAGE_BRANDS = new Set(['heic', 'heix', 'heim', 'heis'])
+const HEVC_SEQUENCE_BRANDS = new Set(['hevc', 'hevx', 'hevm', 'hevs', 'msf1'])
+const UNSUPPORTED_ISO_IMAGE_BRANDS = new Set([
+  ...HEVC_SEQUENCE_BRANDS,
+  'avif',
+  'avis',
+])
+
+export async function validateImage(
+  input: Blob,
+): Promise<SupportedImageFormat> {
   if (input.size > MAX_IMAGE_BYTES) {
     throw new BackgroundRemovalError(
       'image-too-large',
       'This image is over 40 MB. Choose a smaller file.',
     )
   }
+
+  const format = await detectImageFormat(input)
+  if (!format) {
+    throw new BackgroundRemovalError(
+      'unsupported-image',
+      `Choose a ${SUPPORTED_IMAGE_FORMAT_LABEL} image.`,
+    )
+  }
+  return format
 }
 
-export async function decodeImage(input: Blob): Promise<ImageBitmap> {
+export async function detectImageFormat(
+  input: Blob,
+): Promise<SupportedImageFormat | null> {
+  const mime = input.type.toLowerCase().trim()
+  const mimeFormat = MIME_FORMATS.get(mime)
+  if (!mimeFormat && !GENERIC_MIME_TYPES.has(mime)) return null
+
+  const signatureBytes = new Uint8Array(
+    await input.slice(0, 4096).arrayBuffer(),
+  )
+  const signature = inspectImageSignature(
+    signatureBytes,
+    input.size <= signatureBytes.length,
+  )
+  if (signature.kind === 'unsupported') return null
+  if (signature.kind === 'supported') return signature.format
+
+  // HEIC/HEIF routing must be backed by its container signature; otherwise a
+  // mislabeled legacy image would invoke a large fallback decoder needlessly.
+  if (mimeFormat === 'heic') return null
+  if (mimeFormat) return mimeFormat
+
+  if (typeof File !== 'undefined' && input instanceof File) {
+    const extension = input.name.split('.').pop()?.toLowerCase()
+    const extensionFormat = extension
+      ? EXTENSION_FORMATS.get(extension)
+      : undefined
+    if (extensionFormat !== 'heic') return extensionFormat ?? null
+  }
+
+  return null
+}
+
+export function sniffImageFormat(
+  bytes: Uint8Array,
+): SupportedImageFormat | null {
+  const signature = inspectImageSignature(bytes)
+  return signature.kind === 'supported' ? signature.format : null
+}
+
+function inspectImageSignature(
+  bytes: Uint8Array,
+  isComplete = true,
+): ImageSignatureInspection {
+  if (
+    bytes.length >= 8 &&
+    bytes[0] === 0x89 &&
+    bytes[1] === 0x50 &&
+    bytes[2] === 0x4e &&
+    bytes[3] === 0x47 &&
+    bytes[4] === 0x0d &&
+    bytes[5] === 0x0a &&
+    bytes[6] === 0x1a &&
+    bytes[7] === 0x0a
+  ) {
+    return { kind: 'supported', format: 'png' }
+  }
+  if (
+    bytes.length >= 3 &&
+    bytes[0] === 0xff &&
+    bytes[1] === 0xd8 &&
+    bytes[2] === 0xff
+  ) {
+    return { kind: 'supported', format: 'jpeg' }
+  }
+  if (
+    bytes.length >= 12 &&
+    ascii(bytes, 0, 4) === 'RIFF' &&
+    ascii(bytes, 8, 12) === 'WEBP'
+  ) {
+    return { kind: 'supported', format: 'webp' }
+  }
+  if (bytes.length >= 8 && ascii(bytes, 4, 8) === 'ftyp') {
+    const size32 = readUint32(bytes, 0)
+    let headerSize = 8
+    let declaredSize = size32
+    if (size32 === 0) {
+      // A zero-sized box extends to EOF. Only inspect it when the bounded read
+      // contains the whole input; otherwise retain metadata fallback just as
+      // we do for any other incomplete ftyp box.
+      if (!isComplete) return { kind: 'unknown' }
+      declaredSize = bytes.length
+    } else if (size32 === 1) {
+      if (bytes.length < 16) return { kind: 'unknown' }
+
+      const sizeHigh = readUint32(bytes, 8)
+      const sizeLow = readUint32(bytes, 12)
+      // Any non-zero high word is larger than both the sniff window and BG0's
+      // upload limit. Do not combine it into an imprecise JavaScript Number.
+      if (sizeHigh !== 0) return { kind: 'unknown' }
+      headerSize = 16
+      declaredSize = sizeLow
+    }
+
+    const brandFieldsSize = 8
+    if (
+      declaredSize < headerSize + brandFieldsSize ||
+      declaredSize > bytes.length ||
+      (declaredSize - headerSize - brandFieldsSize) % 4 !== 0
+    ) {
+      return { kind: 'unknown' }
+    }
+
+    const majorBrand = ascii(bytes, headerSize, headerSize + 4)
+    if (UNSUPPORTED_ISO_IMAGE_BRANDS.has(majorBrand)) {
+      return { kind: 'unsupported' }
+    }
+    if (HEVC_STILL_IMAGE_BRANDS.has(majorBrand)) {
+      return { kind: 'supported', format: 'heic' }
+    }
+
+    // `mif1` is the generic still-image HEIF container. Its compatible brands
+    // identify the codec; the four bytes after the major brand are the
+    // numeric minor version.
+    if (majorBrand !== 'mif1') return { kind: 'unknown' }
+    for (
+      let offset = headerSize + brandFieldsSize;
+      offset < declaredSize;
+      offset += 4
+    ) {
+      if (HEVC_STILL_IMAGE_BRANDS.has(ascii(bytes, offset, offset + 4))) {
+        return { kind: 'supported', format: 'heic' }
+      }
+    }
+    return { kind: 'unsupported' }
+  }
+  return { kind: 'unknown' }
+}
+
+interface ImageDecoders {
+  native: (input: Blob) => Promise<ImageBitmap>
+  heic: (input: Blob) => Promise<ImageBitmap>
+}
+
+export async function decodeImage(
+  input: Blob,
+  format?: SupportedImageFormat,
+  decoders: ImageDecoders = defaultImageDecoders,
+): Promise<ImageBitmap> {
   try {
-    return await createImageBitmap(input, { imageOrientation: 'from-image' })
+    const resolvedFormat = format ?? (await validateImage(input))
+    if (resolvedFormat !== 'heic') return await decoders.native(input)
+
+    try {
+      return await decoders.native(input)
+    } catch {
+      return await decoders.heic(input)
+    }
   } catch (error) {
     throw new BackgroundRemovalError(
       'decode-failed',
@@ -28,6 +233,34 @@ export async function decodeImage(input: Blob): Promise<ImageBitmap> {
       { cause: error },
     )
   }
+}
+
+const defaultImageDecoders: ImageDecoders = {
+  native: (input) =>
+    createImageBitmap(input, { imageOrientation: 'from-image' }),
+  heic: async (input) => {
+    const decoderUrl = new URL('./vendor/heic-to.js', import.meta.url).href
+    const { heicTo } = await import(/* @vite-ignore */ decoderUrl)
+    return heicTo({
+      blob: input,
+      type: 'bitmap',
+      options: { imageOrientation: 'from-image' },
+    })
+  },
+}
+
+function ascii(bytes: Uint8Array, start: number, end: number): string {
+  return String.fromCharCode(...bytes.subarray(start, end))
+}
+
+function readUint32(bytes: Uint8Array, offset: number): number {
+  return (
+    (bytes[offset] * 0x1000000 +
+      bytes[offset + 1] * 0x10000 +
+      bytes[offset + 2] * 0x100 +
+      bytes[offset + 3]) >>>
+    0
+  )
 }
 
 export interface PreparedInferenceImage {
@@ -48,8 +281,9 @@ export async function prepareImageForInference(
   input: Blob,
   width = 512,
   height = 512,
+  format?: SupportedImageFormat,
 ): Promise<PreparedInferenceImage> {
-  const image = await decodeImage(input)
+  const image = await decodeImage(input, format)
   try {
     const canvas = document.createElement('canvas')
     canvas.width = width
@@ -223,13 +457,7 @@ export function maskToPng(
     )
     const { left, top, right, bottom } = refinement.crop
     maskContext.clearRect(left, top, right - left, bottom - top)
-    maskContext.drawImage(
-      refinedCanvas,
-      left,
-      top,
-      right - left,
-      bottom - top,
-    )
+    maskContext.drawImage(refinedCanvas, left, top, right - left, bottom - top)
     maskCanvas = combinedCanvas
   }
 
@@ -244,8 +472,22 @@ export function maskToPng(
   context.imageSmoothingQuality = quality === 'quality' ? 'high' : 'medium'
   context.drawImage(maskCanvas, 0, 0, image.width, image.height)
 
+  return canvasToPng(output)
+}
+
+export function imageToPng(image: ImageBitmap): Promise<Blob> {
+  const canvas = document.createElement('canvas')
+  canvas.width = image.width
+  canvas.height = image.height
+  const context = canvas.getContext('2d')
+  if (!context) throw new Error('Canvas is unavailable')
+  context.drawImage(image, 0, 0)
+  return canvasToPng(canvas)
+}
+
+function canvasToPng(canvas: HTMLCanvasElement): Promise<Blob> {
   return new Promise((resolve, reject) => {
-    output.toBlob(
+    canvas.toBlob(
       (blob) => (blob ? resolve(blob) : reject(new Error('PNG export failed'))),
       'image/png',
     )

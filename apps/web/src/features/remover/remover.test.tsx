@@ -1,6 +1,10 @@
 import { afterAll, afterEach, describe, expect, mock, test } from 'bun:test'
 import { GlobalRegistrator } from '@happy-dom/global-registrator'
-import { cleanup, fireEvent, render, waitFor } from '@testing-library/react'
+import type {
+  BackgroundRemovalResult,
+  RemoveBackgroundOptions,
+} from '@bg0/browser'
+import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react'
 
 import { isIPhone, Remover } from './remover'
 
@@ -87,7 +91,7 @@ describe('Remover image pickers', () => {
     expect(photoClick).toHaveBeenCalledTimes(2)
     expect(fileClick).not.toHaveBeenCalled()
     expect(photoInput.getAttribute('accept')).toBe(
-      'image/png,image/jpeg,image/webp',
+      'image/png,image/jpeg,image/webp,image/heic,image/heif,image/x-heic,image/x-heif,.heic,.heif,.hif',
     )
 
     fireEvent.click(view.getByRole('button', { name: 'Files' }))
@@ -97,6 +101,140 @@ describe('Remover image pickers', () => {
 
     expect(fileClick).toHaveBeenCalledTimes(4)
     expect(photoClick).toHaveBeenCalledTimes(2)
-    expect(fileInput.hasAttribute('accept')).toBe(false)
+    expect(fileInput.getAttribute('accept')).toBe(
+      'image/png,image/jpeg,image/webp,image/heic,image/heif,image/x-heic,image/x-heif,.heic,.heif,.hif',
+    )
+  })
+
+  test('does not install a result that resolves after reset', async () => {
+    const urls = trackObjectUrls()
+    const request = deferred<BackgroundRemovalResult>()
+    const remove = mock(
+      (_input: Blob, _options?: RemoveBackgroundOptions) => request.promise,
+    )
+
+    try {
+      const view = render(<Remover removeBackgroundImpl={remove} />)
+      selectFile(view, new File(['heic'], 'photo.heic', { type: 'image/heic' }))
+      fireEvent.keyDown(window, { key: 'Escape' })
+
+      expect(urls.revoked).toEqual(['blob:test-1'])
+      await act(async () => request.resolve(resultWithSource()))
+
+      expect(view.getByText('Drop an image anywhere on this page')).toBeTruthy()
+      expect(urls.created).toHaveLength(1)
+      expect(urls.revoked).toEqual(['blob:test-1'])
+    } finally {
+      urls.restore()
+    }
+  })
+
+  test('keeps replacement results isolated and revokes every owned URL', async () => {
+    const urls = trackObjectUrls()
+    const first = deferred<BackgroundRemovalResult>()
+    const second = deferred<BackgroundRemovalResult>()
+    const requests = [first, second]
+    const remove = mock(
+      (_input: Blob, _options?: RemoveBackgroundOptions) =>
+        requests.shift()?.promise ??
+        Promise.reject(new Error('unexpected call')),
+    )
+
+    try {
+      const view = render(<Remover removeBackgroundImpl={remove} />)
+      selectFile(view, new File(['one'], 'one.heic', { type: 'image/heic' }))
+      selectFile(view, new File(['two'], 'two.heic', { type: 'image/heic' }))
+
+      expect(urls.revoked).toEqual(['blob:test-1'])
+      await act(async () => first.resolve(resultWithSource()))
+      expect(urls.created).toHaveLength(2)
+
+      await act(async () => second.resolve(resultWithSource()))
+      expect(view.getByText(/Background removed in/)).toBeTruthy()
+      expect(urls.created).toHaveLength(4)
+      expect(urls.revoked).toEqual(['blob:test-1', 'blob:test-2'])
+
+      view.unmount()
+      expect(urls.revoked).toEqual([
+        'blob:test-1',
+        'blob:test-2',
+        'blob:test-4',
+        'blob:test-3',
+      ])
+    } finally {
+      urls.restore()
+    }
+  })
+
+  test('revokes the pending source and ignores completion after unmount', async () => {
+    const urls = trackObjectUrls()
+    const request = deferred<BackgroundRemovalResult>()
+    const remove = mock(
+      (_input: Blob, _options?: RemoveBackgroundOptions) => request.promise,
+    )
+
+    try {
+      const view = render(<Remover removeBackgroundImpl={remove} />)
+      selectFile(view, new File(['heic'], 'photo.heic', { type: 'image/heic' }))
+      view.unmount()
+
+      expect(urls.revoked).toEqual(['blob:test-1'])
+      await act(async () => request.resolve(resultWithSource()))
+      expect(urls.created).toHaveLength(1)
+      expect(urls.revoked).toEqual(['blob:test-1'])
+    } finally {
+      urls.restore()
+    }
   })
 })
+
+function selectFile(view: ReturnType<typeof render>, file: File) {
+  const transfer = new DataTransfer()
+  transfer.items.add(file)
+  fireEvent.change(
+    view.getByLabelText('Choose an image file to remove its background'),
+    { target: { files: transfer.files } },
+  )
+}
+
+function resultWithSource(): BackgroundRemovalResult {
+  return {
+    blob: new Blob(['result'], { type: 'image/png' }),
+    sourceBlob: new Blob(['source'], { type: 'image/png' }),
+    width: 1,
+    height: 1,
+    provider: 'wasm',
+    quality: 'quality',
+    durationMs: 10,
+  }
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((done) => {
+    resolve = done
+  })
+  return { promise, resolve }
+}
+
+function trackObjectUrls() {
+  const originalCreate = URL.createObjectURL
+  const originalRevoke = URL.revokeObjectURL
+  const created: Blob[] = []
+  const revoked: string[] = []
+
+  URL.createObjectURL = mock((blob: Blob) => {
+    created.push(blob)
+    return `blob:test-${created.length}`
+  })
+  URL.revokeObjectURL = mock((url: string) => revoked.push(url))
+
+  return {
+    created,
+    revoked,
+    restore: () => {
+      URL.createObjectURL = originalCreate
+      URL.revokeObjectURL = originalRevoke
+    },
+  }
+}

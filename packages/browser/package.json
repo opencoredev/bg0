@@ -25,9 +25,9 @@
     }
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && bun scripts/copy-heic-decoder.ts",
     "prepack": "bun run build",
-    "lint": "biome lint src",
+    "lint": "biome lint src scripts",
     "typecheck": "tsc --noEmit",
     "test": "bun test"
   },
@@ -37,9 +37,12 @@
   "devDependencies": {
     "@biomejs/biome": "^2.4.5",
     "@types/bun": "^1.4.2",
+    "heic-to": "1.5.2",
     "typescript": "^6.0.2"
   },
   "files": [
-    "dist"
+    "dist",
+    "LICENSE",
+    "THIRD_PARTY_NOTICES.md"
   ]
 }

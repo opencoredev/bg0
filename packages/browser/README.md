@@ -25,7 +25,9 @@ const url = URL.createObjectURL(result.blob)
 ```
 
 `file` can be any `Blob`, including a `File` from an input or drop event. PNG,
-JPG, and WebP images up to 40 MB are supported.
+JPG, WebP, HEIC, and HEIF images up to 40 MB are supported. For a HEIF still
+collection, BG0 processes its designated primary image. HEIC/HEIF sequences
+are not supported.
 
 The model downloads on the first removal and is cached in browser storage.
 WebGPU is preferred when available, with WebAssembly as the compatibility

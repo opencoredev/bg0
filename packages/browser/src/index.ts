@@ -6,21 +6,24 @@ import {
 import { BackgroundRemovalError, normalizeError } from './errors'
 import {
   decodeImage,
+  imageToPng,
   inspectMask,
   maskToPng,
   prepareImageForInference,
   validateImage,
 } from './image'
 import { createMaskRefinement } from './refinement'
-import {
-  canUseOnnxWebGpu,
-  shouldUseSingleThreadedWasm,
-} from './runtime'
+import { canUseOnnxWebGpu, shouldUseSingleThreadedWasm } from './runtime'
 
 export {
   BackgroundRemovalError,
   type BackgroundRemovalErrorCode,
 } from './errors'
+export {
+  IMAGE_ACCEPT_ATTRIBUTE,
+  SUPPORTED_IMAGE_FORMAT_LABEL,
+  SUPPORTED_IMAGE_MIME_TYPES,
+} from './image'
 
 export type RemovalQuality = 'fast' | 'quality'
 export type ExecutionProvider = 'webgpu' | 'wasm'
@@ -39,6 +42,7 @@ export interface RemoveBackgroundOptions {
 
 export interface BackgroundRemovalResult {
   blob: Blob
+  sourceBlob?: Blob
   width: number
   height: number
   provider: ExecutionProvider
@@ -110,9 +114,14 @@ export async function removeBackground(
 
   try {
     throwIfCancelled(options.signal)
-    validateImage(input)
+    const format = await validateImage(input)
     notify({ stage: 'preparing', progress: 0.03, message: 'Preparing image…' })
-    const preparedImage = await prepareImageForInference(input)
+    const preparedImage = await prepareImageForInference(
+      input,
+      512,
+      512,
+      format,
+    )
     throwIfCancelled(options.signal)
 
     const preferredProvider = getPreferredProvider()
@@ -198,8 +207,11 @@ export async function removeBackground(
     })
 
     notify({ stage: 'finishing', progress: 0.92, message: 'Finishing edges…' })
-    const image = await decodeImage(input)
+    const image = await decodeImage(input, format)
     decodedImage = image
+    throwIfCancelled(options.signal)
+    const sourceBlob = format === 'heic' ? await imageToPng(image) : undefined
+    throwIfCancelled(options.signal)
     const blob = await maskToPng(
       image,
       inference.alpha,
@@ -208,10 +220,12 @@ export async function removeBackground(
       quality,
       refinement,
     )
+    throwIfCancelled(options.signal)
     notify({ stage: 'finishing', progress: 1, message: 'Background removed' })
 
     return {
       blob,
+      sourceBlob,
       width: preparedImage.sourceWidth,
       height: preparedImage.sourceHeight,
       provider: engine.provider,
@@ -409,10 +423,7 @@ async function loadEngine(
     provider === 'wasm' &&
     typeof navigator !== 'undefined' &&
     env.backends.onnx.wasm &&
-    shouldUseSingleThreadedWasm(
-      navigator.userAgent,
-      navigator.maxTouchPoints,
-    )
+    shouldUseSingleThreadedWasm(navigator.userAgent, navigator.maxTouchPoints)
   ) {
     env.backends.onnx.wasm.numThreads = 1
   }

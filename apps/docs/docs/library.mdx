@@ -27,7 +27,7 @@ const result = await removeBackground(file, {
 const url = URL.createObjectURL(result.blob)
 ```
 
-`file` is any `Blob`, such as a `File` from an input or a drop event. PNG, JPG, and WebP up to 40 MB are accepted.
+`file` is any `Blob`, such as a `File` from an input or a drop event. PNG, JPG, WebP, HEIC, and HEIF up to 40 MB are accepted. HEIF still collections use their designated primary image; HEIC/HEIF sequences are not supported.
 
 ## Options
 
@@ -42,6 +42,7 @@ const url = URL.createObjectURL(result.blob)
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `blob` | `Blob` | PNG with alpha |
+| `sourceBlob` | `Blob \| undefined` | Browser-displayable PNG of a HEIC/HEIF source; omitted for natively displayable formats |
 | `width`, `height` | `number` | Pixel size of the output |
 | `provider` | `'webgpu' \| 'wasm'` | Which backend ran the model |
 | `quality` | `'fast' \| 'quality'` | Which mask smoothing level was used |

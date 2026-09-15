@@ -1,0 +1,8 @@
+--- package/src/worker.js
++++ package/src/worker.js
+@@ -15 +15,4 @@
+-    const image = data[0]
++    const image = data.find((candidate) => candidate.is_primary())
++    if (!image) {
++      throw new Error('HEIF primary image not found')
++    }

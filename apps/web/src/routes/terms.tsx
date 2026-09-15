@@ -20,7 +20,7 @@ export const Route = createFileRoute('/terms')({
 
 function Terms() {
   return (
-    <LegalPage title="Terms" updated="September 13, 2026">
+    <LegalPage title="Terms" updated="September 15, 2026">
       <p>
         These terms cover the bg0.dev website and the BG0 software. They are
         short because the product is simple: a tool that runs on your device.
@@ -29,8 +29,9 @@ function Terms() {
       <p>
         BG0 is open source under the Apache 2.0 license. You can use, copy,
         modify, and redistribute it under the terms of that license, which is in
-        the repository. The model weights BG0 downloads are licensed separately
-        by their authors; see the third-party notices in the repository.
+        the repository. The model weights and HEIC decoder are licensed
+        separately by their authors; see the{' '}
+        <a href="/third-party/THIRD_PARTY_NOTICES.txt">third-party notices</a>.
       </p>
       <h2>The website</h2>
       <p>

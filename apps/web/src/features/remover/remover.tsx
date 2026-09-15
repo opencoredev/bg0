@@ -1,8 +1,11 @@
 import {
   BackgroundRemovalError,
   type BackgroundRemovalResult,
+  IMAGE_ACCEPT_ATTRIBUTE,
   type RemovalProgress,
   removeBackground,
+  SUPPORTED_IMAGE_FORMAT_LABEL,
+  SUPPORTED_IMAGE_MIME_TYPES,
 } from '@bg0/browser'
 import {
   Camera,
@@ -44,11 +47,14 @@ type State =
     }
   | { status: 'error'; message: string }
 
-const ACCEPTED_TYPES = ['image/png', 'image/jpeg', 'image/webp']
-const ACCEPT_ATTR = ACCEPTED_TYPES.join(',')
 const CLIPBOARD_TIMEOUT_MS = 1500
 const IPHONE_USER_AGENT = /\biPhone\b/i
 type InputMethod = 'drop' | 'paste' | 'picker'
+type RemoveBackground = typeof removeBackground
+
+interface RemoverProps {
+  removeBackgroundImpl?: RemoveBackground
+}
 
 export function isIPhone(userAgent: string): boolean {
   return IPHONE_USER_AGENT.test(userAgent)
@@ -105,11 +111,14 @@ function clipboardImagesSupported() {
   )
 }
 
-export function Remover() {
+export function Remover({
+  removeBackgroundImpl = removeBackground,
+}: RemoverProps = {}) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const photoInputRef = useRef<HTMLInputElement>(null)
   const abortController = useRef<AbortController | null>(null)
   const latestState = useRef<State>({ status: 'idle' })
+  const mounted = useRef(true)
   const toastId = useRef(0)
   const [state, setState] = useState<State>({ status: 'idle' })
   const [view, setView] = useState<CompareView>('compare')
@@ -131,10 +140,17 @@ export function Remover() {
   }, [state])
 
   useEffect(() => {
+    mounted.current = true
     return () => {
+      mounted.current = false
       abortController.current?.abort()
       cleanupUrls(latestState.current)
     }
+  }, [])
+
+  const commitState = useCallback((next: State) => {
+    latestState.current = next
+    setState(next)
   }, [])
 
   const notify = useCallback((text: string, tone?: ToastMessage['tone']) => {
@@ -147,80 +163,109 @@ export function Remover() {
     setToast((current) => (current?.id === id ? null : current))
   }, [])
 
-  const process = useCallback(async (file: File, inputMethod: InputMethod) => {
-    captureImageSelected(inputMethod)
-    if (!ACCEPTED_TYPES.includes(file.type)) {
-      captureRemovalFailed(inputMethod, 'unsupported-image')
-      setState({
-        status: 'error',
-        message: 'Choose a PNG, JPG, or WebP image.',
-      })
-      return
-    }
+  const process = useCallback(
+    async (file: File, inputMethod: InputMethod) => {
+      captureImageSelected(inputMethod)
 
-    abortController.current?.abort()
-    cleanupUrls(latestState.current)
-    const sourceUrl = URL.createObjectURL(file)
-    const controller = new AbortController()
-    abortController.current = controller
-    setView('compare')
-    setAnnouncement('Removing background on this device.')
-    setState({
-      status: 'processing',
-      sourceUrl,
-      progress: { stage: 'preparing', progress: 0, message: 'Preparing…' },
-    })
-
-    try {
-      const result = await removeBackground(file, {
-        quality: 'quality',
-        signal: controller.signal,
-        onProgress: (progress) =>
-          setState((current) =>
-            current.status === 'processing'
-              ? { ...current, progress }
-              : current,
-          ),
-      })
-      const resultUrl = URL.createObjectURL(result.blob)
-      setState({
-        status: 'result',
+      abortController.current?.abort()
+      cleanupUrls(latestState.current)
+      const sourceUrl = URL.createObjectURL(file)
+      const controller = new AbortController()
+      abortController.current = controller
+      setView('compare')
+      setAnnouncement('Removing background on this device.')
+      commitState({
+        status: 'processing',
         sourceUrl,
-        resultUrl,
-        result,
-        name: file.name.replace(/\.[^.]+$/, '') || 'image',
+        progress: { stage: 'preparing', progress: 0, message: 'Preparing…' },
       })
-      setAnnouncement(
-        `Background removed in ${(result.durationMs / 1000).toFixed(1)} seconds.`,
-      )
-      captureRemovalSucceeded(inputMethod, result.provider)
-    } catch (error) {
-      URL.revokeObjectURL(sourceUrl)
-      if (controller.signal.aborted) return
-      const message =
-        error instanceof BackgroundRemovalError
-          ? error.message
-          : 'Local processing could not finish. Try again.'
-      setState({ status: 'error', message })
-      setAnnouncement(message)
-      const reason =
-        error instanceof BackgroundRemovalError
-          ? error.code
-          : 'inference-failed'
-      captureRemovalFailed(inputMethod, reason)
-      if (
-        reason === 'model-load-failed' ||
-        reason === 'out-of-memory' ||
-        reason === 'inference-failed'
-      ) {
-        captureAppException(error, { area: 'background_removal', reason })
+
+      try {
+        const result = await removeBackgroundImpl(file, {
+          quality: 'quality',
+          signal: controller.signal,
+          onProgress: (progress) => {
+            if (
+              controller.signal.aborted ||
+              abortController.current !== controller ||
+              !mounted.current
+            ) {
+              return
+            }
+            setState((current) => {
+              if (current.status !== 'processing') return current
+              const next = { ...current, progress }
+              latestState.current = next
+              return next
+            })
+          },
+        })
+        if (
+          controller.signal.aborted ||
+          abortController.current !== controller ||
+          !mounted.current
+        ) {
+          return
+        }
+
+        let resultUrl: string | undefined
+        let previewSourceUrl: string | undefined
+        try {
+          resultUrl = URL.createObjectURL(result.blob)
+          previewSourceUrl = result.sourceBlob
+            ? URL.createObjectURL(result.sourceBlob)
+            : sourceUrl
+        } catch (error) {
+          if (resultUrl) URL.revokeObjectURL(resultUrl)
+          throw error
+        }
+        if (previewSourceUrl !== sourceUrl) URL.revokeObjectURL(sourceUrl)
+        commitState({
+          status: 'result',
+          sourceUrl: previewSourceUrl,
+          resultUrl,
+          result,
+          name: file.name.replace(/\.[^.]+$/, '') || 'image',
+        })
+        setAnnouncement(
+          `Background removed in ${(result.durationMs / 1000).toFixed(1)} seconds.`,
+        )
+        captureRemovalSucceeded(inputMethod, result.provider)
+      } catch (error) {
+        if (
+          controller.signal.aborted ||
+          abortController.current !== controller ||
+          !mounted.current
+        ) {
+          return
+        }
+        URL.revokeObjectURL(sourceUrl)
+        const message =
+          error instanceof BackgroundRemovalError
+            ? error.message
+            : 'Local processing could not finish. Try again.'
+        commitState({ status: 'error', message })
+        setAnnouncement(message)
+        const reason =
+          error instanceof BackgroundRemovalError
+            ? error.code
+            : 'inference-failed'
+        captureRemovalFailed(inputMethod, reason)
+        if (
+          reason === 'model-load-failed' ||
+          reason === 'out-of-memory' ||
+          reason === 'inference-failed'
+        ) {
+          captureAppException(error, { area: 'background_removal', reason })
+        }
       }
-    }
-  }, [])
+    },
+    [commitState, removeBackgroundImpl],
+  )
 
   const selectFiles = useCallback(
     (files: FileList | null, inputMethod: InputMethod) => {
-      const file = files?.item(0)
+      const file = files?.item?.(0) ?? files?.[0]
       if (file) void process(file, inputMethod)
     },
     [process],
@@ -231,10 +276,11 @@ export function Remover() {
     cleanupUrls(latestState.current)
     if (fileInputRef.current) fileInputRef.current.value = ''
     if (photoInputRef.current) photoInputRef.current.value = ''
-    setState({ status: 'idle' })
+    abortController.current = null
+    commitState({ status: 'idle' })
     setAnnouncement('Ready for the next image.')
     captureFeatureUsed('start_another_image')
-  }, [])
+  }, [commitState])
 
   const openFilePicker = useCallback(() => fileInputRef.current?.click(), [])
   const openPhotoPicker = useCallback(() => photoInputRef.current?.click(), [])
@@ -282,7 +328,9 @@ export function Remover() {
       const items = await navigator.clipboard.read()
       for (const item of items) {
         const type = item.types.find((candidate) =>
-          ACCEPTED_TYPES.includes(candidate),
+          SUPPORTED_IMAGE_MIME_TYPES.includes(
+            candidate as (typeof SUPPORTED_IMAGE_MIME_TYPES)[number],
+          ),
         )
         if (type) {
           const blob = await item.getType(type)
@@ -456,7 +504,7 @@ export function Remover() {
                 or paste <Kbd>⌘V</Kbd>
               </span>
               <span className="text-input">·</span>
-              <span>PNG, JPG, WebP</span>
+              <span>{SUPPORTED_IMAGE_FORMAT_LABEL}</span>
             </div>
             <div
               ref={pickerRef}
@@ -491,7 +539,7 @@ export function Remover() {
                 </Button>
               </div>
               <p className="text-center text-xs text-faint-foreground">
-                PNG, JPG, WebP · free, no account
+                {SUPPORTED_IMAGE_FORMAT_LABEL} · free, no account
               </p>
             </div>
             {showIPhoneWarning && (
@@ -652,7 +700,7 @@ export function Remover() {
       <input
         ref={photoInputRef}
         type="file"
-        accept={ACCEPT_ATTR}
+        accept={IMAGE_ACCEPT_ATTRIBUTE}
         className="sr-only"
         onChange={(event) => selectFiles(event.target.files, 'picker')}
         aria-label="Choose a photo"
@@ -660,6 +708,7 @@ export function Remover() {
       <input
         ref={fileInputRef}
         type="file"
+        accept={IMAGE_ACCEPT_ATTRIBUTE}
         className="sr-only"
         onChange={(event) => selectFiles(event.target.files, 'picker')}
         aria-label="Choose an image file to remove its background"
