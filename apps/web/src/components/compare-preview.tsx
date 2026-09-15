@@ -30,7 +30,7 @@ export function ComparePreview() {
       data-peek={peeking ? 'true' : undefined}
       data-dragging={dragging ? 'true' : undefined}
       data-instant={peeking || dragging ? 'true' : undefined}
-      className="compare relative m-2 h-[200px] touch-none select-none overflow-hidden rounded-[10px] border border-border-subtle bg-checker outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background sm:h-60"
+      className="compare relative m-2 h-[200px] cursor-ew-resize touch-none select-none overflow-hidden rounded-[10px] border border-border-subtle bg-checker outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background sm:h-60"
       style={{ '--wipe-pos': `${position}%` } as React.CSSProperties}
       onPointerDown={(event) => {
         if (event.button !== 0) return

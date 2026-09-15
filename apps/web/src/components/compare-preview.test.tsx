@@ -39,6 +39,7 @@ describe('ComparePreview', () => {
       setPointerCapture,
     })
 
+    expect(slider.classList.contains('cursor-ew-resize')).toBe(true)
     fireEvent.pointerDown(slider, { button: 0, clientX: 50, pointerId: 7 })
     expect(setPointerCapture).toHaveBeenCalledWith(7)
     expect(slider.getAttribute('aria-valuenow')).toBe('20')
