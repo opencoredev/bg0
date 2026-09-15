@@ -390,7 +390,10 @@ async function loadEngine(
     provider === 'wasm' &&
     typeof navigator !== 'undefined' &&
     env.backends.onnx.wasm &&
-    shouldUseSingleThreadedWasm(navigator.userAgent)
+    shouldUseSingleThreadedWasm(
+      navigator.userAgent,
+      navigator.maxTouchPoints,
+    )
   ) {
     env.backends.onnx.wasm.numThreads = 1
   }

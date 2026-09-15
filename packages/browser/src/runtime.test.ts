@@ -50,4 +50,12 @@ describe('shouldUseSingleThreadedWasm', () => {
     expect(shouldUseSingleThreadedWasm(iphone)).toBe(true)
     expect(shouldUseSingleThreadedWasm(android)).toBe(false)
   })
+
+  test('detects iPadOS when Safari requests a desktop user agent', () => {
+    const desktopIpad =
+      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Version/27.0 Safari/605.1.15'
+
+    expect(shouldUseSingleThreadedWasm(desktopIpad, 5)).toBe(true)
+    expect(shouldUseSingleThreadedWasm(desktopIpad, 0)).toBe(false)
+  })
 })
