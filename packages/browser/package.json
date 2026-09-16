@@ -1,6 +1,6 @@
 {
   "name": "@bg0/browser",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Local browser background removal with WebGPU and WASM",
   "license": "Apache-2.0",
   "homepage": "https://bg0.dev/docs/library",
@@ -32,7 +32,7 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@huggingface/transformers": "^3.8.1"
+    "@huggingface/transformers": "^4.3.0"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.5",
