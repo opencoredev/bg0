@@ -659,7 +659,7 @@ export function Remover({
             />
 
             <div className="flex flex-col gap-3 border-t border-border p-3 sm:h-[60px] sm:flex-row sm:items-center sm:justify-between sm:px-4 sm:py-0">
-              <div className="hidden items-center gap-3 text-[13px] text-muted-foreground sm:flex">
+              <div className="hidden items-center gap-3 text-[13px] text-muted-foreground lg:flex">
                 <span className="inline-flex items-center gap-1.5">
                   Hold <Kbd>Space</Kbd> to peek
                 </span>
@@ -673,7 +673,7 @@ export function Remover({
                   <Kbd>Esc</Kbd> next image
                 </span>
               </div>
-              <div className="grid grid-cols-[auto_1fr_1fr] gap-2 sm:flex">
+              <div className="flex flex-wrap gap-2 sm:ml-auto sm:flex-nowrap">
                 <Button
                   type="button"
                   variant="ghost"
@@ -689,6 +689,7 @@ export function Remover({
                   variant="secondary"
                   onClick={() => void copyResult()}
                   data-testid="copy-result"
+                  className="flex-1 sm:flex-none"
                 >
                   <span
                     className="t-icon-swap size-4"
@@ -708,6 +709,7 @@ export function Remover({
                   type="button"
                   onClick={download}
                   data-testid="download-result"
+                  className="flex-1 sm:flex-none"
                 >
                   <Download aria-hidden="true" />
                   Download PNG

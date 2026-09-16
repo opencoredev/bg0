@@ -32,6 +32,22 @@ bun run test
 bun run build
 ```
 
+## Browser layout regression check
+
+With the web app running locally, run:
+
+```bash
+bunx playwright install chromium
+bun run --cwd apps/web test:layout
+```
+
+This uses the licensed cat sample and real model inference, then checks export
+controls at 11 viewport widths, transparent output, download, reset, and an
+invalid upload. The first run needs network access for the model. Set
+`BG0_TEST_URL` for a different local port, `BG0_TEST_BROWSER` to `firefox` or
+`webkit` (install that Playwright engine first), and optionally
+`BG0_TEST_SCREENSHOTS` to an output directory outside the repository.
+
 ## Browser library
 
 ```ts

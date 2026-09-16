@@ -14,7 +14,8 @@
     "format": "biome format --write src vite.config.ts",
     "lint": "biome lint src scripts vite.config.ts",
     "check": "biome check src vite.config.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:layout": "bun scripts/test-remover-layout.ts"
   },
   "dependencies": {
     "@bg0/browser": "workspace:*",
@@ -49,6 +50,7 @@
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^6.0.1",
     "happy-dom": "^20.14.5",
+    "playwright": "^1.63.0",
     "typescript": "^6.0.2",
     "vite": "^8.0.0"
   },
