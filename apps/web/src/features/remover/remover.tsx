@@ -171,6 +171,7 @@ export function Remover({
   const latestState = useRef<State>({ status: 'idle' })
   const mounted = useRef(true)
   const toastId = useRef(0)
+  const lastFile = useRef<{ file: File; inputMethod: InputMethod } | null>(null)
   const [state, setState] = useState<State>({ status: 'idle' })
   const [view, setView] = useState<CompareView>('compare')
   const [peeking, setPeeking] = useState(false)
@@ -216,6 +217,7 @@ export function Remover({
 
   const process = useCallback(
     async (file: File, inputMethod: InputMethod) => {
+      lastFile.current = { file, inputMethod }
       captureImageSelected(inputMethod)
 
       abortController.current?.abort()
@@ -558,6 +560,10 @@ export function Remover({
     return () => observer.disconnect()
   }, [state.status])
 
+  const retry = useCallback(() => {
+    if (lastFile.current) void process(lastFile.current.file, lastFile.current.inputMethod)
+  }, [process])
+
   return (
     <section
       aria-label="Background remover"
@@ -795,9 +801,14 @@ export function Remover({
                 {state.message}
               </p>
             </div>
-            <Button type="button" variant="secondary" onClick={reset}>
-              Choose another image
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button type="button" variant="secondary" onClick={retry}>
+                Try again
+              </Button>
+              <Button type="button" variant="secondary" onClick={reset}>
+                Choose another image
+              </Button>
+            </div>
           </div>
         )}
       </div>
