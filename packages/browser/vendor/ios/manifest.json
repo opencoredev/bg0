@@ -1,0 +1,33 @@
+{
+  "family": "BiRefNet-lite",
+  "license": "MIT",
+  "checkpoint": "https://huggingface.co/ZhengPeng7/BiRefNet_lite/tree/7838f1c3472f827cd8ce13ab5ccc2ce48077360f",
+  "checkpointSha256": "4417d89795250e698c3cb0ae8df15743810065f646f48a694fdfa7ca052d0815",
+  "referenceExport": "https://huggingface.co/CoderViking/birefnet-lite-onnx/blob/main/export_birefnet_lite.py",
+  "changes": [
+    "Per-tap GridSample deformable convolutions; numerical comparison against torchvision passed",
+    "Static 384/512px inputs; constant folding and initializer deduplication",
+    "Dynamic uint8 Conv/MatMul quantization",
+    "ORT serialization with architecture-independent integer/float32 operators"
+  ],
+  "runtime": "onnxruntime-web 1.31.0-dev.20260914-8d85527a0; single-threaded plain WASM in dedicated worker",
+  "verification": "512px experimental page confirmed working by contributor on physical iPhone 13. Integrated UI requires separate device validation. Desktop Chrome measurements are not iPhone memory measurements.",
+  "files": {
+    "int8-full-512.ort": {
+      "bytes": 55563408,
+      "sha256": "6fa08dc7df0417597454e52e2b721b2c190b13545a46a6bd3a8bac1ebf0709dc"
+    },
+    "ort.wasm.min.mjs": {
+      "bytes": 50195,
+      "sha256": "1617c813ada08592706d29a9963ab6258864dce4299bd402d2196bd648b63bfe"
+    },
+    "ort-wasm-simd-threaded.mjs": {
+      "bytes": 24381,
+      "sha256": "c57ca56328877353a575e51bbca6f18450027d6c9bf2307a2cb2c41363b4de9f"
+    },
+    "ort-wasm-simd-threaded.wasm": {
+      "bytes": 14264838,
+      "sha256": "06ba057753da3847e4c24f02d91ab133455b0817c69a44993a9a53a2146df9e3"
+    }
+  }
+}

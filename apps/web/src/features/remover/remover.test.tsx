@@ -59,9 +59,11 @@ describe('iPhone memory warning', () => {
     expect(prepare).toHaveBeenCalledTimes(1)
   })
 
-  test('does not warm the model on Android or desktop-mode iPad', () => {
+  test('warms Android normally but not desktop-mode iPad', () => {
     const prepare = mock(() => Promise.resolve('wasm' as const))
     warmBackgroundRemovalModel('Android Chrome/150.0 Mobile', prepare, 5)
+    expect(prepare).toHaveBeenCalledTimes(1)
+    prepare.mockClear()
     warmBackgroundRemovalModel(MAC_SAFARI_USER_AGENT, prepare, 5)
     expect(prepare).not.toHaveBeenCalled()
   })
@@ -70,10 +72,7 @@ describe('iPhone memory warning', () => {
     const originalUserAgent = navigator.userAgent
     const urls = trackObjectUrls()
     try {
-      for (const userAgent of [
-        IPHONE_SAFARI_USER_AGENT,
-        'Android Chrome/150.0 Mobile',
-      ]) {
+      for (const userAgent of [IPHONE_SAFARI_USER_AGENT, 'iPad Safari/605.1']) {
         Object.defineProperty(navigator, 'userAgent', {
           configurable: true,
           value: userAgent,
@@ -113,9 +112,7 @@ describe('iPhone memory warning', () => {
         value: MAC_SAFARI_USER_AGENT,
       })
       const desktopView = render(<Remover />)
-      expect(
-        desktopView.queryByText(/probably won’t work on iPhone/),
-      ).toBeNull()
+      expect(desktopView.queryByText(/exports up to 1280px/)).toBeNull()
       desktopView.unmount()
 
       Object.defineProperty(navigator, 'userAgent', {
@@ -124,9 +121,7 @@ describe('iPhone memory warning', () => {
       })
       const iPhoneView = render(<Remover />)
       await waitFor(() => {
-        expect(
-          iPhoneView.getByText(/probably won’t work on iPhone/),
-        ).toBeTruthy()
+        expect(iPhoneView.getByText(/exports up to 1280px/)).toBeTruthy()
       })
     } finally {
       Object.defineProperty(navigator, 'userAgent', {

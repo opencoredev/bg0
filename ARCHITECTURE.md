@@ -53,19 +53,16 @@ arbitrary exception messages and stack text stay in the browser.
 ## Automatic model selection
 
 `@bg0/browser` probes an actual WebGPU adapter before choosing which model to
-attempt first. Non-mobile Chromium browsers reporting fp16 shaders, a 256 MiB buffer limit,
+attempt first. Chromium browsers reporting fp16 shaders, a 256 MiB buffer limit,
 a 128 MiB storage binding limit, and no RAM hint below 4 GiB attempt full BiRefNet.
-Missing RAM hints do not exclude a desktop. Android, iOS, and desktop-mode iPad
-use lite even when their system RAM and GPU buffer hints look desktop-sized.
-Those hints do not measure a mobile tab's memory budget; a killed tab cannot
-recover through the exception-based fallback. These are selection heuristics, not
+Missing RAM hints do not exclude a device. These are selection heuristics, not
 verified compatibility claims. The full Swin-L model uses a patched 512px
 export; the lite Swin-T export also takes
 512px input. Both weights and processor configurations are pinned by revision.
 
 Browsers reporting low memory attempt lite on WebGPU. Without an eligible fp16 GPU,
 browsers reporting at least four logical CPU cores and no RAM hint below 4 GiB
-attempt full BiRefNet on WASM; mobile browsers and smaller or unknown CPU counts select lite.
+attempt full BiRefNet on WASM; iOS and smaller or unknown CPU counts select lite.
 A full-model loading or inference failure falls back to lite on the same
 provider, then lite on WASM if necessary.
 Failed full-model and GPU engines are skipped for the page session and disposed
@@ -83,40 +80,50 @@ Transformers.js 4 ran the full export's GPU operators in that environment;
 3.8.1 failed the full 512px graph, and the unpatched 1024px full export exceeded
 the tested adapter's shader binding limits despite sufficient RAM.
 
-### Mobile image memory
+### iOS memory-constrained inference
 
-On mobile browsers the site skips eager model warming and omits the original
-full-resolution image element during processing. This avoids keeping an extra
-preview decode alongside inference. Desktop processing previews and completed
-full-resolution exports remain unchanged.
+On iPhone/iPad (including desktop-mode iPad), the browser package uses a dedicated
+single-threaded plain-WASM worker and a portable 512px quantized BiRefNet-lite
+export. Desktop/Android model and provider selection are unchanged. No selector,
+server inference, or image upload is introduced. See `docs/ios-model.md` for model
+provenance, reproduction, measurement limits, and the temporary review asset host.
 
-PNG compositing builds the alpha mask in the output canvas, then applies the
-photo with `source-in`. Refinement no longer requires a second full-resolution
-canvas. Temporary mask buffers are cleared after drawing; output buffers are
-cleared after asynchronous PNG encoding settles, including failure paths.
+The optimized graph replaces deformable-convolution expansion with sequential
+per-tap GridSample operations, deduplicates weights, and uses dynamic uint8
+Conv/MatMul quantization. Its weights derive from the official BiRefNet-lite
+checkpoint, not a different network family. Quantization can change results.
 
-This reduces avoidable allocations, not ONNX activation memory or native image
-decoding peaks. A 48 MP source still needs a large bitmap and output canvas.
-Physical iPhone Safari reliability remains unverified; keep the warning until
-tested on hardware. Chromium mobile emulation is not a Safari memory-limit test.
+Before loading, reduce the decoded photo to 512px pixels and release its bitmap.
+iOS skips eager warming/full-photo processing previews. After inference, exports
+and the Compare source are capped at 1280px longest-edge (disclosed by the UI).
+The quality option retains the optional focused refinement pass. This cap is a
+reviewable memory/quality tradeoff, not a claim of original-resolution export.
 
-The first physical iPhone preview reloaded during model loading. As an isolated
-compatibility experiment, iPhone and desktop-mode iPad now select the matched
-plain ONNX WASM factory and binary instead of the default Asyncify pair. The
-asset version comes from the loaded ONNX runtime, and configuration happens
-before its first session. One thread and the same fp16 lite model are retained;
-Android/desktop runtime settings are unchanged. A related upstream report
-(microsoft/onnxruntime#26827) describes Safari resource growth with JSEP builds,
-but is not proof of the cause here. The plain runtime may block the UI while
-computing; its physical-iPhone memory behavior still requires verification.
+Calls are serialized; repeated calls reuse the worker. Abort terminates it and
+settles pending requests. Cache reset defers retirement until active work ends.
+Buffers are transferred rather than cloned. Model-load failures are retryable;
+no fallback to the known memory-heavy iPhone model is attempted. The worker does
+not bypass Safari's per-tab memory budget.
+
+PNG compositing uses one output canvas, releasing temporary mask/output buffers
+after encoding (including failure paths). This allocation improvement is shared
+with desktop/Android; pixel equivalence is covered separately.
+
+Contributor confirmed both experimental variants on an iPhone 13, including a
+camera portrait with visually comparable hair to desktop. Integrated UI still
+requires its own physical-device test; iPad/other iPhones are unverified.
 
 ## Model cache
 
-On HTTPS, Transformers.js uses the browser Cache API. Development origins that
+Desktop/Android: on HTTPS, Transformers.js uses the browser Cache API. Development origins that
 cannot use Cache Storage fall back to BG0's IndexedDB adapter. Calls in the same
 page reuse an initialized engine. A reload can reuse stored model files but must
 still initialize ONNX and upload weights to WebGPU. Browser storage eviction,
 private browsing, or clearing site data can require another download.
+
+iOS uses same-origin build-emitted, content-hashed assets and the normal HTTP
+cache; cache eviction/private browsing can require a fresh download. Reloading
+still initializes the worker. No photo or mask is persisted.
 
 ## Deployment
 

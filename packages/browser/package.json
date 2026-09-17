@@ -25,7 +25,7 @@
     }
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json && bun scripts/copy-heic-decoder.ts",
+    "build": "tsc -p tsconfig.build.json && bun scripts/copy-heic-decoder.ts && bun scripts/copy-ios-assets.ts",
     "prepack": "bun run build",
     "lint": "biome lint src scripts",
     "typecheck": "tsc --noEmit",

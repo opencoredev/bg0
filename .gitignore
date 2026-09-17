@@ -12,3 +12,14 @@ coverage/
 *.log
 .blume/
 .blume-verify/
+
+# Hash-checked iOS model/runtime build inputs (see docs/ios-model.md)
+packages/browser/vendor/ios/*.ort
+packages/browser/vendor/ios/*.wasm
+packages/browser/vendor/ios/*.mjs
+!packages/browser/vendor/ios/worker.mjs
+tools/ios-model/source-checkpoint/
+tools/ios-model/output/
+tools/ios-model/*.onnx
+
+tools/ios-model/__pycache__/

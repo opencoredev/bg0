@@ -2,7 +2,7 @@ import {
   BackgroundRemovalError,
   type BackgroundRemovalResult,
   IMAGE_ACCEPT_ATTRIBUTE,
-  isMobileBrowser,
+  isIosBrowser,
   type RemovalProgress,
   prepareBackgroundRemoval,
   removeBackground,
@@ -69,7 +69,7 @@ export function warmBackgroundRemovalModel(
   prepare = prepareBackgroundRemoval,
   maxTouchPoints = navigator.maxTouchPoints,
 ): void {
-  if (isMobileBrowser(userAgent, maxTouchPoints)) return
+  if (isIosBrowser(userAgent, maxTouchPoints)) return
   void prepare().catch(() => {
     // The normal processing path retries and presents a useful error if needed.
   })
@@ -187,7 +187,7 @@ export function Remover({
 
   useEffect(() => {
     setShowIPhoneWarning(isIPhone(navigator.userAgent))
-    setMobile(isMobileBrowser(navigator.userAgent, navigator.maxTouchPoints))
+    setMobile(isIosBrowser(navigator.userAgent, navigator.maxTouchPoints))
   }, [])
 
   useEffect(() => {
@@ -648,8 +648,9 @@ export function Remover({
                   className="mt-0.5 size-3.5 shrink-0"
                 />
                 <span>
-                  Background removal probably won’t work on iPhone yet. We’re
-                  still figuring out why. Please use a desktop computer for now.
+                  iPhone uses a lower-memory model with exports up to 1280px.
+                  Photos stay on your device. Larger images may still need more
+                  memory than Safari allows.
                 </span>
               </p>
             )}

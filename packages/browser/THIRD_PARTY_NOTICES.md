@@ -46,3 +46,11 @@ The exact corresponding source archives are included under
 The same directory includes `heic-to-primary.patch`, `guarded-transform.ts`,
 and `BUILD.md`, which document the source modification and reproduce the exact
 production artifact from the pinned upstream distribution file.
+
+## iOS optimized BiRefNet-lite and ONNX Runtime
+
+The iOS candidate uses the official MIT BiRefNet-lite checkpoint and a modified
+sequential GridSample export (credited in docs/ios-model.md), dynamically
+quantized and serialized as ORT. Provenance and hashes are in
+`dist/vendor/ios/manifest.json`. BiRefNet MIT terms, ONNX Runtime MIT terms,
+and the runtime third-party notices are distributed beside those files.
