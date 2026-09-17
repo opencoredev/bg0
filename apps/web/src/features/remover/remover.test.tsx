@@ -59,6 +59,51 @@ describe('iPhone memory warning', () => {
     expect(prepare).toHaveBeenCalledTimes(1)
   })
 
+  test('does not warm the model on Android or desktop-mode iPad', () => {
+    const prepare = mock(() => Promise.resolve('wasm' as const))
+    warmBackgroundRemovalModel('Android Chrome/150.0 Mobile', prepare, 5)
+    warmBackgroundRemovalModel(MAC_SAFARI_USER_AGENT, prepare, 5)
+    expect(prepare).not.toHaveBeenCalled()
+  })
+
+  test('does not decode a full-resolution processing preview on phones', async () => {
+    const originalUserAgent = navigator.userAgent
+    const urls = trackObjectUrls()
+    try {
+      for (const userAgent of [
+        IPHONE_SAFARI_USER_AGENT,
+        'Android Chrome/150.0 Mobile',
+      ]) {
+        Object.defineProperty(navigator, 'userAgent', {
+          configurable: true,
+          value: userAgent,
+        })
+        const request = deferred<BackgroundRemovalResult>()
+        const view = render(
+          <Remover
+            removeBackgroundImpl={() => request.promise}
+            waitForPaintImpl={() => Promise.resolve()}
+          />,
+        )
+        selectFile(
+          view,
+          new File(['image'], 'photo.png', { type: 'image/png' }),
+        )
+        expect(view.getByText('Preparing…')).toBeTruthy()
+        expect(
+          view.queryByRole('img', { name: 'Original being processed' }),
+        ).toBeNull()
+        view.unmount()
+      }
+    } finally {
+      Object.defineProperty(navigator, 'userAgent', {
+        configurable: true,
+        value: originalUserAgent,
+      })
+      urls.restore()
+    }
+  })
+
   test('renders only for an iPhone browser', async () => {
     const originalUserAgent = navigator.userAgent
 

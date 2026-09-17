@@ -5,6 +5,7 @@ import {
   detectImageFormat,
   findRefinementCrop,
   inspectMask,
+  imageToPng,
   MAX_IMAGE_BYTES,
   maskToPng,
   sniffImageFormat,
@@ -543,7 +544,7 @@ describe('maskToPng refinement', () => {
         },
       )
 
-      expect(canvases).toHaveLength(4)
+      expect(canvases).toHaveLength(3)
       expect(
         canvases[0]?.context.imageData?.data.filter(
           (_, index) => index % 4 === 3,
@@ -553,7 +554,11 @@ describe('maskToPng refinement', () => {
       expect(canvases[1]?.context.drawCalls[0]?.slice(1)).toEqual([0, 0, 4, 4])
       expect(canvases[1]?.context.clearCalls).toEqual([[1, 1, 2, 2]])
       expect(canvases[1]?.context.drawCalls[1]?.slice(1)).toEqual([1, 1, 2, 2])
-      expect(canvases[3]?.context.drawCalls[1]?.[0]).toBe(canvases[1])
+      expect(canvases[1]?.context.drawCalls[2]?.[0]).toBe(image)
+      expect(canvases[1]?.context.globalCompositeOperation).toBe('source-in')
+      expect(
+        canvases.every((canvas) => canvas.width === 0 && canvas.height === 0),
+      ).toBe(true)
     } finally {
       Object.defineProperty(globalThis, 'document', {
         configurable: true,
@@ -561,6 +566,71 @@ describe('maskToPng refinement', () => {
       })
     }
   })
+})
+
+describe('PNG canvas ownership', () => {
+  for (const mode of [
+    'success',
+    'null-blob',
+    'throw-encode',
+    'context-failure',
+  ] as const) {
+    test(`releases all buffers after ${mode}, but not before encoding`, async () => {
+      const originalDocument = globalThis.document
+      const canvases: FakeCanvas[] = []
+      const encoders: ((blob: Blob | null) => void)[] = []
+      Object.defineProperty(globalThis, 'document', {
+        configurable: true,
+        value: {
+          createElement: () => {
+            const canvas = new FakeCanvas()
+            if (mode === 'context-failure') {
+              canvas.getContext = () => {
+                throw new Error('Canvas allocation failed')
+              }
+            }
+            canvas.toBlob = (callback) => {
+              if (mode === 'throw-encode') throw new Error('Encoder failed')
+              encoders.push(callback)
+            }
+            canvases.push(canvas)
+            return canvas
+          },
+        },
+      })
+      try {
+        for (const exportImage of [
+          (image: ImageBitmap) => imageToPng(image),
+          (image: ImageBitmap) =>
+            maskToPng(image, new Float32Array([1]), 1, 1, 'fast'),
+        ]) {
+          encoders.length = 0
+          const pending = exportImage({
+            width: 4000,
+            height: 3000,
+          } as ImageBitmap)
+          if (mode === 'success' || mode === 'null-blob') {
+            expect(canvases.at(-1)?.width).toBe(4000)
+            expect(encoders[0]).toBeDefined()
+            encoders[0]?.(mode === 'success' ? new Blob(['png']) : null)
+          }
+          if (mode === 'success')
+            await expect(pending).resolves.toBeInstanceOf(Blob)
+          else await expect(pending).rejects.toBeInstanceOf(Error)
+          expect(
+            canvases.every(
+              (canvas) => canvas.width === 0 && canvas.height === 0,
+            ),
+          ).toBe(true)
+        }
+      } finally {
+        Object.defineProperty(globalThis, 'document', {
+          configurable: true,
+          value: originalDocument,
+        })
+      }
+    })
+  }
 })
 
 class FakeCanvas {

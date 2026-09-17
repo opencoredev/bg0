@@ -2,6 +2,7 @@ import {
   BackgroundRemovalError,
   type BackgroundRemovalResult,
   IMAGE_ACCEPT_ATTRIBUTE,
+  isMobileBrowser,
   type RemovalProgress,
   prepareBackgroundRemoval,
   removeBackground,
@@ -66,8 +67,9 @@ export function isIPhone(userAgent: string): boolean {
 export function warmBackgroundRemovalModel(
   userAgent = navigator.userAgent,
   prepare = prepareBackgroundRemoval,
+  maxTouchPoints = navigator.maxTouchPoints,
 ): void {
-  if (isIPhone(userAgent)) return
+  if (isMobileBrowser(userAgent, maxTouchPoints)) return
   void prepare().catch(() => {
     // The normal processing path retries and presents a useful error if needed.
   })
@@ -179,11 +181,13 @@ export function Remover({
   const [toast, setToast] = useState<ToastMessage | null>(null)
   const [announcement, setAnnouncement] = useState('')
   const [showIPhoneWarning, setShowIPhoneWarning] = useState(false)
+  const [mobile, setMobile] = useState(false)
   const pickerRef = useRef<HTMLDivElement>(null)
   const [pickerOffscreen, setPickerOffscreen] = useState(false)
 
   useEffect(() => {
     setShowIPhoneWarning(isIPhone(navigator.userAgent))
+    setMobile(isMobileBrowser(navigator.userAgent, navigator.maxTouchPoints))
   }, [])
 
   useEffect(() => {
@@ -657,12 +661,14 @@ export function Remover({
             aria-busy="true"
             className="t-stage relative flex min-h-[220px] items-center justify-center bg-checker sm:min-h-[400px]"
           >
-            <img
-              src={state.sourceUrl}
-              alt="Original being processed"
-              draggable={false}
-              className="absolute inset-0 size-full object-contain"
-            />
+            {!mobile && (
+              <img
+                src={state.sourceUrl}
+                alt="Original being processed"
+                draggable={false}
+                className="absolute inset-0 size-full object-contain"
+              />
+            )}
             <div className="absolute inset-x-0 top-0 h-0.5 bg-border-subtle">
               <div
                 className="h-full bg-wipe transition-[width] duration-(--duration-medium) ease-(--ease-smooth-out)"

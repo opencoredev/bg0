@@ -12,6 +12,26 @@ const adapter = {
 const gpu = { requestAdapter: async () => adapter }
 
 describe('hardware-based model selection', () => {
+  test('keeps Android phones and tablets on lite despite desktop-sized GPU limits and RAM hints', async () => {
+    for (const userAgent of [
+      'Android Mobile Chrome/150.0',
+      'Android Chrome/150.0',
+    ]) {
+      for (const availableGpu of [gpu, undefined]) {
+        const choices = await detectEngineChoices({
+          userAgent,
+          gpu: availableGpu,
+          deviceMemory: 8,
+          hardwareConcurrency: 8,
+        })
+        expect(
+          choices.every((choice) => choice.definition === LITE_MODEL),
+        ).toBe(true)
+        expect(choices.at(-1)?.provider).toBe('wasm')
+        if (availableGpu) expect(choices[0]?.provider).toBe('webgpu')
+      }
+    }
+  })
   test('prefers the full model on ordinary integrated GPUs, including unknown RAM', async () => {
     for (const deviceMemory of [undefined, 4, 8]) {
       expect(

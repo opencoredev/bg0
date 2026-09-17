@@ -53,16 +53,19 @@ arbitrary exception messages and stack text stay in the browser.
 ## Automatic model selection
 
 `@bg0/browser` probes an actual WebGPU adapter before choosing which model to
-attempt first. Chromium browsers reporting fp16 shaders, a 256 MiB buffer limit,
+attempt first. Non-mobile Chromium browsers reporting fp16 shaders, a 256 MiB buffer limit,
 a 128 MiB storage binding limit, and no RAM hint below 4 GiB attempt full BiRefNet.
-Missing RAM hints do not exclude a device. These are selection heuristics, not
+Missing RAM hints do not exclude a desktop. Android, iOS, and desktop-mode iPad
+use lite even when their system RAM and GPU buffer hints look desktop-sized.
+Those hints do not measure a mobile tab's memory budget; a killed tab cannot
+recover through the exception-based fallback. These are selection heuristics, not
 verified compatibility claims. The full Swin-L model uses a patched 512px
 export; the lite Swin-T export also takes
 512px input. Both weights and processor configurations are pinned by revision.
 
 Browsers reporting low memory attempt lite on WebGPU. Without an eligible fp16 GPU,
 browsers reporting at least four logical CPU cores and no RAM hint below 4 GiB
-attempt full BiRefNet on WASM; iOS and smaller or unknown CPU counts select lite.
+attempt full BiRefNet on WASM; mobile browsers and smaller or unknown CPU counts select lite.
 A full-model loading or inference failure falls back to lite on the same
 provider, then lite on WASM if necessary.
 Failed full-model and GPU engines are skipped for the page session and disposed
@@ -79,6 +82,23 @@ Safari, Firefox, and the deployed origin remain unverified for this change.
 Transformers.js 4 ran the full export's GPU operators in that environment;
 3.8.1 failed the full 512px graph, and the unpatched 1024px full export exceeded
 the tested adapter's shader binding limits despite sufficient RAM.
+
+### Mobile image memory
+
+On mobile browsers the site skips eager model warming and omits the original
+full-resolution image element during processing. This avoids keeping an extra
+preview decode alongside inference. Desktop processing previews and completed
+full-resolution exports remain unchanged.
+
+PNG compositing builds the alpha mask in the output canvas, then applies the
+photo with `source-in`. Refinement no longer requires a second full-resolution
+canvas. Temporary mask buffers are cleared after drawing; output buffers are
+cleared after asynchronous PNG encoding settles, including failure paths.
+
+This reduces avoidable allocations, not ONNX activation memory or native image
+decoding peaks. A 48 MP source still needs a large bitmap and output canvas.
+Physical iPhone Safari reliability remains unverified; keep the warning until
+tested on hardware. Chromium mobile emulation is not a Safari memory-limit test.
 
 ## Model cache
 

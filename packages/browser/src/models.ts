@@ -1,4 +1,4 @@
-import { canUseOnnxWebGpu, shouldUseSingleThreadedWasm } from './runtime'
+import { canUseOnnxWebGpu, isMobileBrowser } from './runtime'
 
 export type RemovalModel = 'birefnet' | 'birefnet-lite'
 export type ExecutionProvider = 'webgpu' | 'wasm'
@@ -57,7 +57,7 @@ export function engineKey(choice: EngineChoice): string {
   return `${choice.definition.id}:${choice.definition.revision}:${choice.provider}`
 }
 
-/** Missing RAM hints are common; only a reported low-memory device opts out. */
+/** Mobile tab budgets are tighter than their system RAM/GPU limits suggest. */
 export async function detectEngineChoices(
   hardware: HardwareNavigator | undefined = typeof navigator === 'undefined'
     ? undefined
@@ -66,6 +66,9 @@ export async function detectEngineChoices(
   const choices: EngineChoice[] = []
   const memory = hardware?.deviceMemory
   const lowMemory = Boolean(memory && memory < 4)
+  const mobile = Boolean(
+    hardware && isMobileBrowser(hardware.userAgent, hardware.maxTouchPoints),
+  )
   if (hardware && canUseOnnxWebGpu(hardware.userAgent, Boolean(hardware.gpu))) {
     try {
       const adapter = await hardware.gpu?.requestAdapter()
@@ -78,6 +81,7 @@ export async function detectEngineChoices(
         // failures still fall back. Do not gate on CPU count or GPU branding.
         if (
           !lowMemory &&
+          !mobile &&
           adapter.limits.maxBufferSize >= 256 * 1024 * 1024 &&
           adapter.limits.maxStorageBufferBindingSize >= 128 * 1024 * 1024
         ) {
@@ -97,7 +101,7 @@ export async function detectEngineChoices(
     hardware &&
     !lowMemory &&
     (hardware.hardwareConcurrency ?? 0) >= 4 &&
-    !shouldUseSingleThreadedWasm(hardware.userAgent, hardware.maxTouchPoints)
+    !mobile
   ) {
     choices.push({ definition: FULL_MODEL, provider: 'wasm' })
   }

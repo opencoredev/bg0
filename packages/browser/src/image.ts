@@ -295,18 +295,15 @@ export async function prepareImageForInference(
   format?: SupportedImageFormat,
 ): Promise<PreparedInferenceImage> {
   const image = await decodeImage(input, format)
+  let canvas: HTMLCanvasElement | undefined
   try {
-    const canvas = document.createElement('canvas')
+    canvas = document.createElement('canvas')
     canvas.width = width
     canvas.height = height
     const context = canvas.getContext('2d', { willReadFrequently: true })
     if (!context) throw new Error('Canvas is unavailable')
     context.drawImage(image, 0, 0, width, height)
     const data = context.getImageData(0, 0, width, height).data
-
-    // Release the canvas backing store as soon as its pixels have been copied.
-    canvas.width = 0
-    canvas.height = 0
 
     return {
       data,
@@ -316,6 +313,7 @@ export async function prepareImageForInference(
       sourceHeight: image.height,
     }
   } finally {
+    if (canvas) releaseCanvas(canvas)
     image.close()
   }
 }
@@ -441,7 +439,7 @@ export function findRefinementCrop(
   return { left, top, right, bottom }
 }
 
-export function maskToPng(
+export async function maskToPng(
   image: ImageBitmap,
   mask: Float32Array,
   maskWidth: number,
@@ -449,51 +447,63 @@ export function maskToPng(
   quality: 'fast' | 'quality',
   refinement?: MaskRefinement,
 ): Promise<Blob> {
-  let maskCanvas = alphaCanvas(mask, maskWidth, maskHeight, quality)
+  const canvases: HTMLCanvasElement[] = []
+  try {
+    const base = alphaCanvas(mask, maskWidth, maskHeight, quality)
+    canvases.push(base)
+    const output = document.createElement('canvas')
+    canvases.push(output)
+    output.width = image.width
+    output.height = image.height
+    const context = output.getContext('2d')
+    if (!context) throw new Error('Canvas is unavailable')
+    context.imageSmoothingEnabled = true
+    context.imageSmoothingQuality = quality === 'quality' ? 'high' : 'medium'
+    context.drawImage(base, 0, 0, image.width, image.height)
+    releaseCanvas(base)
 
-  if (refinement) {
-    const combinedCanvas = document.createElement('canvas')
-    combinedCanvas.width = image.width
-    combinedCanvas.height = image.height
-    const maskContext = combinedCanvas.getContext('2d')
-    if (!maskContext) throw new Error('Canvas is unavailable')
-    maskContext.imageSmoothingEnabled = true
-    maskContext.imageSmoothingQuality = 'high'
-    maskContext.drawImage(maskCanvas, 0, 0, image.width, image.height)
-    const refinedCanvas = alphaCanvas(
-      refinement.mask,
-      refinement.maskWidth,
-      refinement.maskHeight,
-      quality,
-    )
-    const { left, top, right, bottom } = refinement.crop
-    maskContext.clearRect(left, top, right - left, bottom - top)
-    maskContext.drawImage(refinedCanvas, left, top, right - left, bottom - top)
-    maskCanvas = combinedCanvas
+    if (refinement) {
+      const refined = alphaCanvas(
+        refinement.mask,
+        refinement.maskWidth,
+        refinement.maskHeight,
+        quality,
+      )
+      canvases.push(refined)
+      const { left, top, right, bottom } = refinement.crop
+      context.clearRect(left, top, right - left, bottom - top)
+      context.drawImage(refined, left, top, right - left, bottom - top)
+      releaseCanvas(refined)
+    }
+
+    // Reuse the full-size mask as the output. source-in retains the photo's
+    // colors with the mask alpha, without a second full-resolution canvas.
+    context.globalCompositeOperation = 'source-in'
+    context.drawImage(image, 0, 0)
+    // toBlob is asynchronous: keep pixels alive until encoding has settled.
+    return await canvasToPng(output)
+  } finally {
+    for (const canvas of canvases) releaseCanvas(canvas)
   }
-
-  const output = document.createElement('canvas')
-  output.width = image.width
-  output.height = image.height
-  const context = output.getContext('2d')
-  if (!context) throw new Error('Canvas is unavailable')
-  context.drawImage(image, 0, 0)
-  context.globalCompositeOperation = 'destination-in'
-  context.imageSmoothingEnabled = true
-  context.imageSmoothingQuality = quality === 'quality' ? 'high' : 'medium'
-  context.drawImage(maskCanvas, 0, 0, image.width, image.height)
-
-  return canvasToPng(output)
 }
 
-export function imageToPng(image: ImageBitmap): Promise<Blob> {
+export async function imageToPng(image: ImageBitmap): Promise<Blob> {
   const canvas = document.createElement('canvas')
-  canvas.width = image.width
-  canvas.height = image.height
-  const context = canvas.getContext('2d')
-  if (!context) throw new Error('Canvas is unavailable')
-  context.drawImage(image, 0, 0)
-  return canvasToPng(canvas)
+  try {
+    canvas.width = image.width
+    canvas.height = image.height
+    const context = canvas.getContext('2d')
+    if (!context) throw new Error('Canvas is unavailable')
+    context.drawImage(image, 0, 0)
+    return await canvasToPng(canvas)
+  } finally {
+    releaseCanvas(canvas)
+  }
+}
+
+function releaseCanvas(canvas: HTMLCanvasElement): void {
+  canvas.width = 0
+  canvas.height = 0
 }
 
 function canvasToPng(canvas: HTMLCanvasElement): Promise<Blob> {
@@ -512,22 +522,29 @@ function alphaCanvas(
   quality: 'fast' | 'quality',
 ) {
   const canvas = document.createElement('canvas')
-  canvas.width = width
-  canvas.height = height
-  const context = canvas.getContext('2d')
-  if (!context) throw new Error('Canvas is unavailable')
-  const pixels = context.createImageData(width, height)
-  for (let index = 0; index < mask.length; index += 1) {
-    const alpha =
-      quality === 'quality' ? mask[index] : smoothstep(0.08, 0.92, mask[index])
-    const offset = index * 4
-    pixels.data[offset] = 255
-    pixels.data[offset + 1] = 255
-    pixels.data[offset + 2] = 255
-    pixels.data[offset + 3] = Math.round(alpha * 255)
+  try {
+    canvas.width = width
+    canvas.height = height
+    const context = canvas.getContext('2d')
+    if (!context) throw new Error('Canvas is unavailable')
+    const pixels = context.createImageData(width, height)
+    for (let index = 0; index < mask.length; index += 1) {
+      const alpha =
+        quality === 'quality'
+          ? mask[index]
+          : smoothstep(0.08, 0.92, mask[index])
+      const offset = index * 4
+      pixels.data[offset] = 255
+      pixels.data[offset + 1] = 255
+      pixels.data[offset + 2] = 255
+      pixels.data[offset + 3] = Math.round(alpha * 255)
+    }
+    context.putImageData(pixels, 0, 0)
+    return canvas
+  } catch (error) {
+    releaseCanvas(canvas)
+    throw error
   }
-  context.putImageData(pixels, 0, 0)
-  return canvas
 }
 
 function smoothstep(min: number, max: number, value: number): number {

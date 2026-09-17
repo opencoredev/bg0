@@ -5,6 +5,17 @@ const IOS_DEVICE = /\b(?:iPhone|iPad|iPod)\b/i
 const MACINTOSH = /\bMacintosh\b/i
 const SUPPORTED_CHROMIUM = /\b(?:Chrome|Chromium|Edg|OPR|SamsungBrowser)\/\d+/i
 
+/** Device RAM and GPU buffer limits do not measure a mobile tab's budget. */
+export function isMobileBrowser(
+  userAgent: string,
+  maxTouchPoints = 0,
+): boolean {
+  return (
+    /\b(?:Android|Mobile)\b/i.test(userAgent) ||
+    shouldUseSingleThreadedWasm(userAgent, maxTouchPoints)
+  )
+}
+
 export function canUseOnnxWebGpu(
   userAgent: string,
   hasNavigatorGpu: boolean,

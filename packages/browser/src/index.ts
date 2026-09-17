@@ -36,6 +36,7 @@ export {
 } from './image'
 
 export type RemovalQuality = 'fast' | 'quality'
+export { isMobileBrowser } from './runtime'
 export type { ExecutionProvider, RemovalModel } from './models'
 
 export interface RemovalProgress {
