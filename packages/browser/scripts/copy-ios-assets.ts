@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto'
+import { loadIosAsset } from './ios-assets'
 
 const directory = new URL('../vendor/ios/', import.meta.url)
 const manifest = await Bun.file(new URL('manifest.json', directory)).json()
@@ -10,27 +10,11 @@ for (const [name, metadata] of Object.entries(manifest.files) as [
   string,
   { bytes: number; sha256: string },
 ][]) {
-  const source = Bun.file(new URL(name, directory))
-  if (!(await source.exists())) {
-    const response = await fetch(new URL(name, downloadBase))
-    if (!response.ok) throw new Error(`Cannot acquire iOS build asset: ${name}`)
-    const bytes = await response.arrayBuffer()
-    if (
-      bytes.byteLength !== metadata.bytes ||
-      createHash('sha256').update(new Uint8Array(bytes)).digest('hex') !==
-        metadata.sha256
-    ) {
-      throw new Error(`Invalid iOS build asset: ${name}`)
-    }
-    await Bun.write(source, bytes)
-  }
-  const bytes = new Uint8Array(await source.arrayBuffer())
-  if (
-    bytes.byteLength !== metadata.bytes ||
-    createHash('sha256').update(bytes).digest('hex') !== metadata.sha256
-  ) {
-    throw new Error(`iOS asset checksum mismatch: ${name}`)
-  }
+  const bytes = await loadIosAsset(
+    new URL(name, directory),
+    new URL(name, downloadBase),
+    metadata,
+  )
   await Bun.write(new URL(`../dist/vendor/ios/${name}`, import.meta.url), bytes)
 }
 for (const name of [
