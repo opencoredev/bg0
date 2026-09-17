@@ -23,7 +23,7 @@ import {
   type RemovalModel,
 } from './models'
 import { createMaskRefinement, type InferenceMask } from './refinement'
-import { canUseOnnxWebGpu, shouldUseSingleThreadedWasm } from './runtime'
+import { canUseOnnxWebGpu, configureIosWasm } from './runtime'
 
 export {
   BackgroundRemovalError,
@@ -589,11 +589,13 @@ async function loadEngine(
   )
   if (
     provider === 'wasm' &&
-    typeof navigator !== 'undefined' &&
-    env.backends.onnx.wasm &&
-    shouldUseSingleThreadedWasm(navigator.userAgent, navigator.maxTouchPoints)
+    typeof navigator !== 'undefined'
   ) {
-    env.backends.onnx.wasm.numThreads = 1
+    configureIosWasm(
+      env.backends.onnx,
+      navigator.userAgent,
+      navigator.maxTouchPoints,
+    )
   }
   // The Cache API only exists in secure contexts. Fall back to IndexedDB so
   // the model is still cached on plain-http previews and older browsers.

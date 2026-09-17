@@ -1,5 +1,49 @@
 import { describe, expect, test } from 'bun:test'
-import { canUseOnnxWebGpu, shouldUseSingleThreadedWasm } from './runtime'
+import {
+  canUseOnnxWebGpu,
+  configureIosWasm,
+  shouldUseSingleThreadedWasm,
+} from './runtime'
+
+describe('iOS plain WASM runtime', () => {
+  const version = '1.31.0-dev.20260914-8d85527a0'
+  const settings = () => ({
+    versions: { web: version, common: '1.30.0' },
+    wasm: {
+      numThreads: 4,
+      wasmPaths: { mjs: 'original.asyncify.mjs', wasm: 'original.asyncify.wasm' },
+    },
+  })
+
+  test.each([
+    ['iPhone Safari/605.1', 0],
+    ['iPhone CriOS/153.0', 0],
+    ['Macintosh Safari/605.1', 5],
+  ])('uses a matching plain factory/binary on %s', (ua, touches) => {
+    const onnx = settings()
+    configureIosWasm(onnx, ua, touches)
+    const base = `https://cdn.jsdelivr.net/npm/onnxruntime-web@${version}/dist/ort-wasm-simd-threaded`
+    expect(onnx.wasm).toEqual({
+      numThreads: 1,
+      wasmPaths: { mjs: `${base}.mjs`, wasm: `${base}.wasm` },
+    })
+  })
+
+  test.each(['Android Chrome/152.0', 'Macintosh Safari/605.1', 'Chrome/152.0'])(
+    'leaves other platforms unchanged: %s',
+    (ua) => {
+      const onnx = settings()
+      configureIosWasm(onnx, ua)
+      expect(onnx).toEqual(settings())
+    },
+  )
+
+  test('does not silently use an unversioned or incompatible iOS runtime', () => {
+    expect(() => configureIosWasm({ wasm: {} }, 'iPhone')).toThrow(
+      'runtime version is unavailable',
+    )
+  })
+})
 
 describe('canUseOnnxWebGpu', () => {
   test('rejects iPhone Safari even when WebKit exposes navigator.gpu', () => {

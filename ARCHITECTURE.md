@@ -100,6 +100,16 @@ decoding peaks. A 48 MP source still needs a large bitmap and output canvas.
 Physical iPhone Safari reliability remains unverified; keep the warning until
 tested on hardware. Chromium mobile emulation is not a Safari memory-limit test.
 
+The first physical iPhone preview reloaded during model loading. As an isolated
+compatibility experiment, iPhone and desktop-mode iPad now select the matched
+plain ONNX WASM factory and binary instead of the default Asyncify pair. The
+asset version comes from the loaded ONNX runtime, and configuration happens
+before its first session. One thread and the same fp16 lite model are retained;
+Android/desktop runtime settings are unchanged. A related upstream report
+(microsoft/onnxruntime#26827) describes Safari resource growth with JSEP builds,
+but is not proof of the cause here. The plain runtime may block the UI while
+computing; its physical-iPhone memory behavior still requires verification.
+
 ## Model cache
 
 On HTTPS, Transformers.js uses the browser Cache API. Development origins that
