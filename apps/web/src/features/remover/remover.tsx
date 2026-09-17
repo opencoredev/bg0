@@ -1,9 +1,10 @@
 import {
   BackgroundRemovalError,
+  type BackgroundRemovalErrorCode,
   type BackgroundRemovalResult,
   IMAGE_ACCEPT_ATTRIBUTE,
-  type RemovalProgress,
   prepareBackgroundRemoval,
+  type RemovalProgress,
   removeBackground,
   SUPPORTED_IMAGE_FORMAT_LABEL,
   SUPPORTED_IMAGE_MIME_TYPES,
@@ -46,7 +47,7 @@ type State =
       result: BackgroundRemovalResult
       name: string
     }
-  | { status: 'error'; message: string }
+  | { status: 'error'; message: string; code: BackgroundRemovalErrorCode }
 
 const CLIPBOARD_TIMEOUT_MS = 1500
 const IPHONE_USER_AGENT = /\biPhone\b/i
@@ -216,9 +217,8 @@ export function Remover({
   }, [])
 
   const process = useCallback(
-    async (file: File, inputMethod: InputMethod) => {
-      lastFile.current = { file, inputMethod }
-      captureImageSelected(inputMethod)
+    async (file: File, inputMethod: InputMethod, emitAnalytics = true) => {
+      if (emitAnalytics) captureImageSelected(inputMethod)
 
       abortController.current?.abort()
       cleanupUrls(latestState.current)
@@ -295,6 +295,7 @@ export function Remover({
           `Background removed in ${(result.durationMs / 1000).toFixed(1)} seconds.`,
         )
         captureRemovalSucceeded(inputMethod, result.provider)
+        lastFile.current = null
       } catch (error) {
         if (
           controller.signal.aborted ||
@@ -304,23 +305,26 @@ export function Remover({
           return
         }
         URL.revokeObjectURL(sourceUrl)
+        const code =
+          error instanceof BackgroundRemovalError
+            ? error.code
+            : 'inference-failed'
         const message =
           error instanceof BackgroundRemovalError
             ? error.message
             : 'Local processing could not finish. Try again.'
-        commitState({ status: 'error', message })
+        commitState({ status: 'error', message, code })
         setAnnouncement(message)
-        const reason =
-          error instanceof BackgroundRemovalError
-            ? error.code
-            : 'inference-failed'
-        captureRemovalFailed(inputMethod, reason)
+        captureRemovalFailed(inputMethod, code)
         if (
-          reason === 'model-load-failed' ||
-          reason === 'out-of-memory' ||
-          reason === 'inference-failed'
+          code === 'model-load-failed' ||
+          code === 'out-of-memory' ||
+          code === 'inference-failed'
         ) {
-          captureAppException(error, { area: 'background_removal', reason })
+          captureAppException(error, {
+            area: 'background_removal',
+            reason: code,
+          })
         }
       }
     },
@@ -330,7 +334,10 @@ export function Remover({
   const selectFiles = useCallback(
     (files: FileList | null, inputMethod: InputMethod) => {
       const file = files?.item?.(0) ?? files?.[0]
-      if (file) void process(file, inputMethod)
+      if (file) {
+        lastFile.current = { file, inputMethod }
+        void process(file, inputMethod)
+      }
     },
     [process],
   )
@@ -338,6 +345,7 @@ export function Remover({
   const reset = useCallback(() => {
     abortController.current?.abort()
     cleanupUrls(latestState.current)
+    lastFile.current = null
     if (fileInputRef.current) fileInputRef.current.value = ''
     if (photoInputRef.current) photoInputRef.current.value = ''
     abortController.current = null
@@ -398,7 +406,9 @@ export function Remover({
         )
         if (type) {
           const blob = await item.getType(type)
-          void process(new File([blob], 'clipboard.png', { type }), 'paste')
+          const file = new File([blob], 'clipboard.png', { type })
+          lastFile.current = { file, inputMethod: 'paste' }
+          void process(file, 'paste')
           return
         }
       }
@@ -457,6 +467,7 @@ export function Remover({
       event.preventDefault()
       const file = fileFromDrop(data)
       if (file) {
+        lastFile.current = { file, inputMethod: 'drop' }
         void process(file, 'drop')
       } else {
         notify(
@@ -484,6 +495,7 @@ export function Remover({
       const file = fileFromClipboard(event.clipboardData)
       if (!file) return
       event.preventDefault()
+      lastFile.current = { file, inputMethod: 'paste' }
       void process(file, 'paste')
     }
     window.addEventListener('paste', onPaste)
@@ -561,7 +573,8 @@ export function Remover({
   }, [state.status])
 
   const retry = useCallback(() => {
-    if (lastFile.current) void process(lastFile.current.file, lastFile.current.inputMethod)
+    if (lastFile.current)
+      void process(lastFile.current.file, lastFile.current.inputMethod, false)
   }, [process])
 
   return (
@@ -802,9 +815,11 @@ export function Remover({
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Button type="button" variant="secondary" onClick={retry}>
-                Try again
-              </Button>
+              {isRetryableError(state.code) && (
+                <Button type="button" variant="secondary" onClick={retry}>
+                  Try again
+                </Button>
+              )}
               <Button type="button" variant="secondary" onClick={reset}>
                 Choose another image
               </Button>
@@ -863,6 +878,10 @@ function progressLabel(progress: RemovalProgress) {
     return `${progress.message} · cached after this`
   }
   return progress.message
+}
+
+function isRetryableError(code: BackgroundRemovalErrorCode): boolean {
+  return code !== 'unsupported-image' && code !== 'image-too-large'
 }
 
 function cleanupUrls(state: State) {

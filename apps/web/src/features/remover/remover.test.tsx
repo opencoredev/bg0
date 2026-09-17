@@ -1,9 +1,10 @@
 import { afterAll, afterEach, describe, expect, mock, test } from 'bun:test'
-import { GlobalRegistrator } from '@happy-dom/global-registrator'
-import type {
-  BackgroundRemovalResult,
-  RemoveBackgroundOptions,
+import {
+  BackgroundRemovalError,
+  type BackgroundRemovalResult,
+  type RemoveBackgroundOptions,
 } from '@bg0/browser'
+import { GlobalRegistrator } from '@happy-dom/global-registrator'
 import {
   act,
   cleanup,
@@ -19,7 +20,9 @@ import {
   warmBackgroundRemovalModel,
 } from './remover'
 
-GlobalRegistrator.register()
+if (!GlobalRegistrator.isRegistered) {
+  GlobalRegistrator.register()
+}
 
 class IntersectionObserverStub {
   observe() {}
@@ -30,7 +33,11 @@ globalThis.IntersectionObserver =
   IntersectionObserverStub as unknown as typeof IntersectionObserver
 
 afterEach(cleanup)
-afterAll(() => GlobalRegistrator.unregister())
+afterAll(() => {
+  if (GlobalRegistrator.isRegistered) {
+    void GlobalRegistrator.unregister()
+  }
+})
 
 const IPHONE_SAFARI_USER_AGENT =
   'Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 Version/27.0 Mobile/15E148 Safari/604.1'
@@ -446,6 +453,137 @@ describe('Remover image drops', () => {
       }
     },
   )
+})
+
+describe('Remover retry', () => {
+  test.each([
+    ['inference-failed', true],
+    ['decode-failed', true],
+    ['model-load-failed', true],
+    ['out-of-memory', true],
+    ['image-too-large', false],
+    ['unsupported-image', false],
+  ] as const)(
+    'shows retry for %s only when retryable',
+    async (code, shouldShowRetry) => {
+      const remove = mock(() =>
+        Promise.reject(new BackgroundRemovalError(code, `${code} message`)),
+      )
+      const view = render(
+        <Remover
+          removeBackgroundImpl={remove}
+          waitForPaintImpl={async () => {}}
+        />,
+      )
+
+      try {
+        selectFile(view, new File(['x'], 'test.png', { type: 'image/png' }))
+        await waitFor(() => {
+          expect(
+            view.getByText('That image could not be processed'),
+          ).toBeTruthy()
+        })
+        if (shouldShowRetry) {
+          expect(view.getByRole('button', { name: 'Try again' })).toBeTruthy()
+        } else {
+          expect(view.queryByRole('button', { name: 'Try again' })).toBeNull()
+        }
+        expect(
+          view.getByRole('button', { name: 'Choose another image' }),
+        ).toBeTruthy()
+      } finally {
+        view.unmount()
+      }
+    },
+  )
+
+  test('retry reprocesses the same file without a new selection', async () => {
+    const urls = trackObjectUrls()
+    const seen: Blob[] = []
+    const remove = mock((input: Blob, _options?: RemoveBackgroundOptions) => {
+      seen.push(input)
+      if (seen.length === 1) {
+        return Promise.reject(
+          new BackgroundRemovalError('inference-failed', 'transient boom'),
+        )
+      }
+      return Promise.resolve(resultWithSource())
+    })
+    const view = render(
+      <Remover
+        removeBackgroundImpl={remove}
+        waitForPaintImpl={async () => {}}
+      />,
+    )
+
+    try {
+      const file = new File(['image'], 'retry.png', { type: 'image/png' })
+      selectFile(view, file)
+      await waitFor(() => {
+        expect(view.getByRole('button', { name: 'Try again' })).toBeTruthy()
+      })
+      expect(remove).toHaveBeenCalledTimes(1)
+
+      fireEvent.click(view.getByRole('button', { name: 'Try again' }))
+      await waitFor(() => {
+        expect(view.getByRole('button', { name: /Download PNG/ })).toBeTruthy()
+      })
+      expect(remove).toHaveBeenCalledTimes(2)
+      expect(seen[0]).toBe(seen[1])
+    } finally {
+      view.unmount()
+      urls.restore()
+    }
+  })
+
+  test('reset then a new error retries the new file', async () => {
+    const urls = trackObjectUrls()
+    const seen: Blob[] = []
+    const remove = mock((input: Blob, _options?: RemoveBackgroundOptions) => {
+      seen.push(input)
+      if (seen.length <= 2) {
+        return Promise.reject(
+          new BackgroundRemovalError('inference-failed', 'transient boom'),
+        )
+      }
+      return Promise.resolve(resultWithSource())
+    })
+    const view = render(
+      <Remover
+        removeBackgroundImpl={remove}
+        waitForPaintImpl={async () => {}}
+      />,
+    )
+
+    try {
+      selectFile(view, new File(['one'], 'one.png', { type: 'image/png' }))
+      await waitFor(() => {
+        expect(view.getByRole('button', { name: 'Try again' })).toBeTruthy()
+      })
+      fireEvent.keyDown(window, { key: 'Escape' })
+      await waitFor(() => {
+        expect(
+          view.getByText('Drop an image anywhere on this page'),
+        ).toBeTruthy()
+      })
+
+      const second = new File(['two'], 'two.png', { type: 'image/png' })
+      selectFile(view, second)
+      await waitFor(() => {
+        expect(view.getByRole('button', { name: 'Try again' })).toBeTruthy()
+      })
+      fireEvent.click(view.getByRole('button', { name: 'Try again' }))
+      await waitFor(() => {
+        expect(view.getByRole('button', { name: /Download PNG/ })).toBeTruthy()
+      })
+      expect(remove).toHaveBeenCalledTimes(3)
+      expect(seen[1]).toBe(second)
+      expect(seen[2]).toBe(second)
+    } finally {
+      view.unmount()
+      urls.restore()
+    }
+  })
 })
 
 function selectFile(view: ReturnType<typeof render>, file: File) {
