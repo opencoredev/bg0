@@ -10,8 +10,12 @@ experiment's memory safeguard; this is a product tradeoff requiring review.
 On a physical iPhone 13, the contributor reports both the 384px and 512px
 experimental pages work. A real camera portrait processed successfully; their
 same-photo comparison looked about as good as desktop (subjective, not a claim
-of better accuracy). The main-UI integration needs a separate physical test.
-iPad, all newer iPhones, HEIC camera originals and large batches are unverified.
+of better accuracy). The integrated UI also completed the cat, portrait, and
+synthetic 4032×3024 fixtures on that iPhone 13. Original downloaded RGBA PNGs
+were verified at 768×512, 512×512, and 1280×960 with alpha transparency.
+The exact five-run/no-refresh sequence and refinement interactions were not
+separately confirmed. iPad, newer iPhones, native HEIC and large batches remain
+unverified.
 
 Desktop Chrome isolated renderer RSS, indicative single runs (NOT Safari RAM):
 original 2.4–2.7 GiB; optimized 512px worker about 1.24 GiB. Mask foreground IoU

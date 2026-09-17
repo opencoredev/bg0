@@ -11,7 +11,7 @@
     "ORT serialization with architecture-independent integer/float32 operators"
   ],
   "runtime": "onnxruntime-web 1.31.0-dev.20260914-8d85527a0; single-threaded plain WASM in dedicated worker",
-  "verification": "512px experimental page confirmed working by contributor on physical iPhone 13. Integrated UI requires separate device validation. Desktop Chrome measurements are not iPhone memory measurements.",
+  "verification": "512px experiment and integrated UI confirmed on a physical iPhone 13. Integrated UI completed three fixtures including a synthetic 12 MP image; original output PNG dimensions and alpha transparency verified. Repeated-run sequence and refinement interactions were not separately confirmed. iPad/other iPhones remain unverified. Desktop Chrome measurements are not iPhone memory measurements.",
   "files": {
     "int8-full-512.ort": {
       "bytes": 55563408,

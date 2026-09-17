@@ -50,7 +50,6 @@ type State =
   | { status: 'error'; message: string }
 
 const CLIPBOARD_TIMEOUT_MS = 1500
-const IPHONE_USER_AGENT = /\biPhone\b/i
 type InputMethod = 'drop' | 'paste' | 'picker'
 type RemoveBackground = typeof removeBackground
 type WaitForPaint = () => Promise<void>
@@ -58,10 +57,6 @@ type WaitForPaint = () => Promise<void>
 interface RemoverProps {
   removeBackgroundImpl?: RemoveBackground
   waitForPaintImpl?: WaitForPaint
-}
-
-export function isIPhone(userAgent: string): boolean {
-  return IPHONE_USER_AGENT.test(userAgent)
 }
 
 export function warmBackgroundRemovalModel(
@@ -180,13 +175,15 @@ export function Remover({
   const [copied, setCopied] = useState(false)
   const [toast, setToast] = useState<ToastMessage | null>(null)
   const [announcement, setAnnouncement] = useState('')
-  const [showIPhoneWarning, setShowIPhoneWarning] = useState(false)
+  const [showIosExportNotice, setShowIosExportNotice] = useState(false)
   const [mobile, setMobile] = useState(false)
   const pickerRef = useRef<HTMLDivElement>(null)
   const [pickerOffscreen, setPickerOffscreen] = useState(false)
 
   useEffect(() => {
-    setShowIPhoneWarning(isIPhone(navigator.userAgent))
+    setShowIosExportNotice(
+      isIosBrowser(navigator.userAgent, navigator.maxTouchPoints),
+    )
     setMobile(isIosBrowser(navigator.userAgent, navigator.maxTouchPoints))
   }, [])
 
@@ -641,16 +638,16 @@ export function Remover({
                 {SUPPORTED_IMAGE_FORMAT_LABEL} · free, no account
               </p>
             </div>
-            {showIPhoneWarning && (
+            {showIosExportNotice && (
               <p className="relative z-10 flex max-w-[460px] items-start justify-center gap-1.5 text-center text-[11px] leading-4 text-muted-foreground">
                 <TriangleAlert
                   aria-hidden="true"
                   className="mt-0.5 size-3.5 shrink-0"
                 />
                 <span>
-                  iPhone uses a lower-memory model with exports up to 1280px.
-                  Photos stay on your device. Larger images may still need more
-                  memory than Safari allows.
+                  iPhone and iPad use a lower-memory model with exports up to
+                  1280px. Photos stay on your device. Larger images may still
+                  need more memory than Safari allows.
                 </span>
               </p>
             )}

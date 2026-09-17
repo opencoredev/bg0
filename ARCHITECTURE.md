@@ -110,8 +110,11 @@ after encoding (including failure paths). This allocation improvement is shared
 with desktop/Android; pixel equivalence is covered separately.
 
 Contributor confirmed both experimental variants on an iPhone 13, including a
-camera portrait with visually comparable hair to desktop. Integrated UI still
-requires its own physical-device test; iPad/other iPhones are unverified.
+camera portrait with visually comparable hair to desktop. The integrated UI
+also completed all three supplied fixtures on a physical iPhone 13, including a
+synthetic 4032×3024 image. Downloaded RGBA PNG dimensions and transparency were
+verified. The exact five-run/no-refresh sequence and refinement interactions
+were not separately confirmed; iPad/other iPhones remain unverified.
 
 ## Model cache
 

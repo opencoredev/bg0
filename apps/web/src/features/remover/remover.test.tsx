@@ -13,7 +13,6 @@ import {
 } from '@testing-library/react'
 
 import {
-  isIPhone,
   Remover,
   waitForNextPaint,
   warmBackgroundRemovalModel,
@@ -38,17 +37,7 @@ const IPHONE_SAFARI_USER_AGENT =
 const MAC_SAFARI_USER_AGENT =
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Version/27.0 Safari/605.1.15'
 
-describe('iPhone memory warning', () => {
-  test('detects iPhone without treating Mac or iPad as iPhone', () => {
-    expect(isIPhone(IPHONE_SAFARI_USER_AGENT)).toBe(true)
-    expect(isIPhone(MAC_SAFARI_USER_AGENT)).toBe(false)
-    expect(
-      isIPhone(
-        'Mozilla/5.0 (iPad; CPU OS 18_7 like Mac OS X) AppleWebKit/605.1.15 Version/27.0 Mobile/15E148 Safari/604.1',
-      ),
-    ).toBe(false)
-  })
-
+describe('iOS export notice', () => {
   test('does not warm the model on iPhone', () => {
     const prepare = mock(() => Promise.resolve('wasm' as const))
 
@@ -103,33 +92,63 @@ describe('iPhone memory warning', () => {
     }
   })
 
-  test('renders only for an iPhone browser', async () => {
-    const originalUserAgent = navigator.userAgent
-
-    try {
-      Object.defineProperty(navigator, 'userAgent', {
-        configurable: true,
-        value: MAC_SAFARI_USER_AGENT,
-      })
-      const desktopView = render(<Remover />)
-      expect(desktopView.queryByText(/exports up to 1280px/)).toBeNull()
-      desktopView.unmount()
-
-      Object.defineProperty(navigator, 'userAgent', {
-        configurable: true,
-        value: IPHONE_SAFARI_USER_AGENT,
-      })
-      const iPhoneView = render(<Remover />)
-      await waitFor(() => {
-        expect(iPhoneView.getByText(/exports up to 1280px/)).toBeTruthy()
-      })
-    } finally {
-      Object.defineProperty(navigator, 'userAgent', {
-        configurable: true,
-        value: originalUserAgent,
-      })
-    }
-  })
+  test.each([
+    ['iPhone', IPHONE_SAFARI_USER_AGENT, 5, true],
+    [
+      'iPad',
+      'Mozilla/5.0 (iPad; CPU OS 18_7 like Mac OS X) AppleWebKit/605.1.15 Safari/604.1',
+      5,
+      true,
+    ],
+    ['desktop-mode iPad', MAC_SAFARI_USER_AGENT, 5, true],
+    ['Mac', MAC_SAFARI_USER_AGENT, 0, false],
+    [
+      'Android',
+      'Mozilla/5.0 (Linux; Android 15) Chrome/150.0 Mobile',
+      5,
+      false,
+    ],
+  ] as const)(
+    'discloses the export cap correctly on %s',
+    async (_name, userAgent, maxTouchPoints, expected) => {
+      const originalUserAgent = Object.getOwnPropertyDescriptor(
+        navigator,
+        'userAgent',
+      )
+      const originalTouchPoints = Object.getOwnPropertyDescriptor(
+        navigator,
+        'maxTouchPoints',
+      )
+      try {
+        Object.defineProperty(navigator, 'userAgent', {
+          configurable: true,
+          value: userAgent,
+        })
+        Object.defineProperty(navigator, 'maxTouchPoints', {
+          configurable: true,
+          value: maxTouchPoints,
+        })
+        const view = render(<Remover />)
+        await waitFor(() => {
+          expect(Boolean(view.queryByText(/exports up to 1280px/))).toBe(
+            expected,
+          )
+        })
+        view.unmount()
+      } finally {
+        if (originalUserAgent)
+          Object.defineProperty(navigator, 'userAgent', originalUserAgent)
+        else Reflect.deleteProperty(navigator, 'userAgent')
+        if (originalTouchPoints)
+          Object.defineProperty(
+            navigator,
+            'maxTouchPoints',
+            originalTouchPoints,
+          )
+        else Reflect.deleteProperty(navigator, 'maxTouchPoints')
+      }
+    },
+  )
 })
 
 describe('Remover image pickers', () => {
