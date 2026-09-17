@@ -62,6 +62,24 @@ source snapshot is pinned to ZhengPeng7/BiRefNet_lite revision
    hashes in the manifest identify the tested artifacts, not a guarantee of
    bit-identical conversion on arbitrary systems. Never update hashes blindly.
 
+The float32 exporter rejects a maximum absolute logit error above `1e-3` or
+maximum absolute sigmoid/alpha error above `2.5e-4` against the unpatched
+PyTorch reference. The pinned 384/512px export runs measured logit errors of
+`7.057e-5` / `6.962e-5`; the tolerance leaves FP32 accumulation headroom and
+matches the existing patched-PyTorch tolerance. Sigmoid is 1/4-Lipschitz, giving
+the paired alpha bound (less than 0.064 of an 8-bit alpha level). Non-finite
+values and output-shape mismatches also fail. Conversion takes place in a
+temporary directory, and the requested output is replaced only after validation
+passes. A failed run leaves any previous output unchanged; callers must honor
+the nonzero exit status rather than quantize an older file.
+
+These checks use the deterministic seeded probe and test numerical equivalence
+of the float32 graph, not general segmentation quality. Quantization is a
+separate transformation and still requires the browser/fixture quality checks
+above. This change does not regenerate or replace the phone-tested model files.
+The lightweight publication-gate regressions run without Torch/ONNX dependencies:
+`python3 -m unittest discover -s tools/ios-model -p 'test_*.py'`.
+
 Exporter adapted from CoderViking's BiRefNet-lite GridSample export:
 https://huggingface.co/CoderViking/birefnet-lite-onnx/blob/main/export_birefnet_lite.py
 Upstream model: https://github.com/ZhengPeng7/BiRefNet (MIT).

@@ -16,4 +16,5 @@ jobs:
       - run: bun run lint
       - run: bun run typecheck
       - run: bun run test
+      - run: python3 -m unittest discover -s tools/ios-model -p 'test_*.py'
       - run: bun run build

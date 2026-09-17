@@ -25,6 +25,10 @@ Usage: python export_birefnet_lite.py [--size 1024] [--out birefnet_lite.onnx]
 """
 import argparse
 import sys
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
+from validation import publish_validated_export
 
 import numpy as np
 import torch
@@ -116,6 +120,18 @@ def main():
     ap.add_argument('--out', default='birefnet_lite.onnx')
     args = ap.parse_args()
 
+    destination = Path(args.out).resolve()
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    # Only publish a complete, validated artifact. Failed exports leave an
+    # existing output untouched and discard all temporary conversion files.
+    with TemporaryDirectory(prefix='.bg0-export-', dir=destination.parent) as directory:
+        candidate = Path(directory) / destination.name
+        args.out = str(candidate)
+        logit_error, alpha_error = export_candidate(args)
+        publish_validated_export(candidate, destination, logit_error, alpha_error)
+
+
+def export_candidate(args):
     from transformers import AutoModelForImageSegmentation
     torch.set_num_threads(4)
     torch.set_grad_enabled(False)
@@ -201,11 +217,17 @@ def main():
     import onnxruntime as ort_rt
     sess = ort_rt.InferenceSession(args.out, providers=['CPUExecutionProvider'])
     onnx_logits = sess.run(None, {'input_image': probe.numpy()})[0]
-    onnx_err = np.abs(ref_logits.numpy() - onnx_logits).max()
+    reference = ref_logits.numpy()
+    if reference.shape != onnx_logits.shape:
+        raise ValueError('ONNX output shape differs from the PyTorch reference')
+    if not np.isfinite(reference).all() or not np.isfinite(onnx_logits).all():
+        raise ValueError('Non-finite values in export validation')
+    onnx_err = np.abs(reference - onnx_logits).max()
     alpha_err = np.abs(torch.sigmoid(ref_logits).numpy()
                        - 1 / (1 + np.exp(-onnx_logits))).max()
     print(f'onnx vs torch reference: max abs logits dev {onnx_err:.3e}, '
           f'max sigmoid dev {alpha_err:.3e}')
+    return float(onnx_err), float(alpha_err)
 
 
 if __name__ == '__main__':
