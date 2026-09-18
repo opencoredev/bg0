@@ -271,9 +271,41 @@ export async function removeBackground(
       }
     }
 
+    throwIfCancelled(options.signal)
+    let highResSource: InstanceType<typeof RawImage> | undefined
+    if (quality === 'quality') {
+      try {
+        throwIfCancelled(options.signal)
+        const image = await decodeImage(input, format)
+        try {
+          const maxDim = Math.max(image.width, image.height)
+          const scale = maxDim > 1024 ? 1024 / maxDim : 1
+          const w = Math.round(image.width * scale)
+          const h = Math.round(image.height * scale)
+          const canvas = document.createElement('canvas')
+          canvas.width = w
+          canvas.height = h
+          const ctx = canvas.getContext('2d', { willReadFrequently: true })
+          if (ctx) {
+            ctx.drawImage(image, 0, 0, w, h)
+            const data = ctx.getImageData(0, 0, w, h).data
+            canvas.width = 0
+            canvas.height = 0
+            highResSource = new RawImage(data, w, h, 4)
+          }
+        } finally {
+          image.close()
+        }
+      } catch {
+        throwIfCancelled(options.signal)
+        // Refinement is optional; fallback to base source
+      }
+    }
+
     const refinement = await createMaskRefinement({
       quality,
       source,
+      highResSource,
       outputWidth: preparedImage.sourceWidth,
       outputHeight: preparedImage.sourceHeight,
       base: inference,

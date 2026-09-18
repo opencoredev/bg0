@@ -1,5 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { type ComponentType, useEffect, useState } from 'react'
+import { Button } from '#/components/ui/button'
 
 const loadRemover = import.meta.env.SSR
   ? null
@@ -41,18 +42,46 @@ function RemoverFallback() {
 
 function BrowserRemover() {
   const [Component, setComponent] = useState<ComponentType | null>(null)
+  const [failed, setFailed] = useState(false)
 
   useEffect(() => {
     let mounted = true
-    void loadRemover?.().then(({ Remover, warmBackgroundRemovalModel }) => {
-      if (!mounted) return
-      warmBackgroundRemovalModel()
-      setComponent(() => Remover)
-    })
+    void loadRemover?.()
+      ?.then(({ Remover, warmBackgroundRemovalModel }) => {
+        if (!mounted) return
+        warmBackgroundRemovalModel()
+        setComponent(() => Remover)
+      })
+      ?.catch(() => {
+        if (!mounted) return
+        setFailed(true)
+      })
     return () => {
       mounted = false
     }
   }, [])
+
+  if (failed) {
+    return (
+      <section
+        role="alert"
+        aria-label="Failed to load local background remover"
+        className="grid min-h-[430px] place-items-center rounded-xl border border-border-subtle bg-card p-6 text-center text-sm text-muted-foreground sm:min-h-[520px]"
+      >
+        <div className="flex flex-col items-center gap-3">
+          <p>Local remover could not be loaded.</p>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={() => window.location.reload()}
+          >
+            Reload
+          </Button>
+        </div>
+      </section>
+    )
+  }
 
   return Component ? <Component /> : <RemoverFallback />
 }

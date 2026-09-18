@@ -16,6 +16,7 @@ export interface InferenceMask {
 interface RefinementOptions {
   quality: 'fast' | 'quality'
   source: RawImage
+  highResSource?: RawImage
   outputWidth: number
   outputHeight: number
   base: InferenceMask
@@ -27,6 +28,7 @@ interface RefinementOptions {
 export async function createMaskRefinement({
   quality,
   source,
+  highResSource,
   outputWidth,
   outputHeight,
   base,
@@ -35,21 +37,22 @@ export async function createMaskRefinement({
   infer,
 }: RefinementOptions): Promise<MaskRefinement | undefined> {
   if (quality !== 'quality') return undefined
+  const imageSource = highResSource ?? source
   const crop = findRefinementCrop(
     base.alpha,
     base.maskWidth,
     base.maskHeight,
-    source.width,
-    source.height,
+    imageSource.width,
+    imageSource.height,
   )
   if (!crop) return undefined
 
   throwIfCancelled(signal)
   onRefining()
   try {
-    const croppedSource = await source
+    const croppedSource = await imageSource
       .clone()
-      .crop([crop.left, crop.top, crop.right, crop.bottom])
+      .crop([crop.left, crop.top, crop.right - 1, crop.bottom - 1])
     const refined = await infer(croppedSource)
     throwIfCancelled(signal)
     if (!refined.inspection.valid || !refined.inspection.hasForegroundSignal) {
@@ -60,10 +63,10 @@ export async function createMaskRefinement({
       maskWidth: refined.maskWidth,
       maskHeight: refined.maskHeight,
       crop: {
-        left: Math.floor((crop.left * outputWidth) / source.width),
-        top: Math.floor((crop.top * outputHeight) / source.height),
-        right: Math.ceil((crop.right * outputWidth) / source.width),
-        bottom: Math.ceil((crop.bottom * outputHeight) / source.height),
+        left: Math.floor((crop.left * outputWidth) / imageSource.width),
+        top: Math.floor((crop.top * outputHeight) / imageSource.height),
+        right: Math.ceil((crop.right * outputWidth) / imageSource.width),
+        bottom: Math.ceil((crop.bottom * outputHeight) / imageSource.height),
       },
     }
   } catch {

@@ -1,5 +1,5 @@
 import { describe, expect, mock, test } from 'bun:test'
-import type { RawImage } from '@huggingface/transformers'
+import { RawImage } from '@huggingface/transformers'
 import type { InferenceMask } from './refinement'
 import { createMaskRefinement } from './refinement'
 
@@ -58,6 +58,43 @@ describe('createMaskRefinement', () => {
     })
     expect(infer).toHaveBeenCalledTimes(1)
     expect(onRefining).toHaveBeenCalledTimes(1)
+  })
+
+  test('uses highResSource and inclusive crop bounds when provided', async () => {
+    let croppedBox: number[] | undefined
+    const highRes = {
+      width: 400,
+      height: 200,
+      clone: () => ({
+        crop: async (box: number[]) => {
+          croppedBox = box
+          return highRes
+        },
+      }),
+    } as unknown as RawImage
+
+    const infer = mock(async () => compactMask())
+    const result = await createMaskRefinement({
+      quality: 'quality',
+      source: source(),
+      highResSource: highRes,
+      outputWidth: 400,
+      outputHeight: 200,
+      base: compactMask(),
+      onRefining: () => undefined,
+      infer,
+    })
+
+    expect(infer).toHaveBeenCalledTimes(1)
+    expect(croppedBox).toEqual([100, 40, 299, 159])
+    expect(result?.crop).toEqual({ left: 100, top: 40, right: 300, bottom: 160 })
+  })
+
+  test('verifies RawImage.crop produces exact inclusive dimensions', async () => {
+    const raw = new RawImage(new Uint8Array(400 * 200 * 4), 400, 200, 4)
+    const cropped = await raw.crop([100, 40, 299, 159])
+    expect(cropped.width).toBe(200)
+    expect(cropped.height).toBe(120)
   })
 
   test('keeps the base result when optional inference fails', async () => {

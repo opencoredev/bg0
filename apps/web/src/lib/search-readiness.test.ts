@@ -7,7 +7,13 @@ async function getPublicUrls(): Promise<string[]> {
     new Bun.Glob('src/routes/*.tsx').scan({ onlyFiles: true }),
   )
   const webUrls = webRoutes
-    .map((path) => path.split('/').at(-1)?.replace(/\.tsx$/, '') ?? '')
+    .map((path) =>
+      path
+        .replaceAll('\\', '/')
+        .split('/')
+        .at(-1)
+        ?.replace(/\.tsx$/, '') ?? '',
+    )
     .filter((route) => route && !route.startsWith('__') && !route.includes('$'))
     .map((route) => `${SITE_URL}${route === 'index' ? '/' : `/${route}`}`)
 
@@ -16,6 +22,7 @@ async function getPublicUrls(): Promise<string[]> {
   )
   const docsUrls = docsPages.map((path) => {
     const route = path
+      .replaceAll('\\', '/')
       .replace('../docs/docs/', '')
       .replace(/\.mdx$/, '')
       .split('/')

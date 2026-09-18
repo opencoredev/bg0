@@ -169,12 +169,16 @@ export function CompareSlider({
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
       const target = event.target
+      if (!(target instanceof HTMLElement)) return
       if (
-        target instanceof HTMLElement &&
-        (target.isContentEditable ||
-          ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))
-      )
+        target.isContentEditable ||
+        ['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON', 'A'].includes(target.tagName) ||
+        target.getAttribute('role') === 'button'
+      ) {
+        if (!rootRef.current?.contains(target)) return
+      } else if (target !== document.body && !rootRef.current?.contains(target)) {
         return
+      }
       event.preventDefault()
       shift = event.shiftKey
       if (event.repeat) return
