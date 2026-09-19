@@ -56,7 +56,7 @@ describe('analytics privacy', () => {
 
   test('allows only the controlled multiple-choice survey schema', () => {
     const allowed = sanitizeCapture({
-      event: '$survey_response',
+      event: 'survey sent',
       properties: {
         $survey_id: 'result-quality',
         $survey_response_rating: 'Good',
@@ -64,7 +64,7 @@ describe('analytics privacy', () => {
       },
     } as unknown as CaptureResult)
     const privateText = sanitizeCapture({
-      event: '$survey_response',
+      event: 'survey sent',
       properties: {
         $survey_response_comment:
           'vacation.png was 4032x3024: https://example.com/photo.jpg',
@@ -73,6 +73,46 @@ describe('analytics privacy', () => {
 
     expect(allowed).not.toBeNull()
     expect(privateText).toBeNull()
+  })
+
+  test('allows recommendation scores and predefined follow-up reasons', () => {
+    const allowed = sanitizeCapture({
+      event: 'survey sent',
+      properties: {
+        $survey_id: 'recommendation',
+        $survey_response_rating: 9,
+        $survey_response_reason: ['Privacy'],
+      },
+    } as unknown as CaptureResult)
+    const outOfRange = sanitizeCapture({
+      event: 'survey sent',
+      properties: {
+        $survey_id: 'recommendation',
+        $survey_response_rating: 11,
+      },
+    } as unknown as CaptureResult)
+
+    expect(allowed).not.toBeNull()
+    expect(outOfRange).toBeNull()
+  })
+
+  test('removes dashboard-controlled survey question snapshots', () => {
+    const allowed = sanitizeCapture({
+      event: 'survey sent',
+      properties: {
+        $survey_id: 'recommendation',
+        $survey_response_rating: 9,
+        $survey_questions: [
+          {
+            question: 'Why?',
+            response: 'vacation.png at https://example.com/photo.jpg',
+          },
+        ],
+      },
+    } as unknown as CaptureResult)
+
+    expect(allowed).not.toBeNull()
+    expect(allowed?.properties.$survey_questions).toBeUndefined()
   })
 
   test('does not forward arbitrary exception metadata', () => {

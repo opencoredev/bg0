@@ -9,6 +9,7 @@ mock.module('#/lib/analytics', () => ({
     imageSelectedCalls.push(inputMethod)
   },
   captureRemovalSucceeded: () => {},
+  showResultSurvey: () => {},
   captureRemovalFailed: () => {},
   captureResultDownloaded: () => {},
   captureFeatureUsed: () => {},

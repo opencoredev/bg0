@@ -1,7 +1,7 @@
 import { useRouterState } from '@tanstack/react-router'
 import { useEffect } from 'react'
 
-import { capturePageView } from '#/lib/analytics'
+import { capturePageView, initializeAnalytics } from '#/lib/analytics'
 
 export function AnalyticsPageView() {
   const pathname = useRouterState({
@@ -9,6 +9,10 @@ export function AnalyticsPageView() {
   })
 
   useEffect(() => capturePageView(pathname), [pathname])
+
+  useEffect(() => {
+    initializeAnalytics()
+  }, [])
 
   return null
 }

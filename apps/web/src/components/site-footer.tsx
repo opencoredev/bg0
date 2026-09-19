@@ -11,7 +11,7 @@ const links = [
 
 export function SiteFooter() {
   return (
-    <footer className="border-t border-border-subtle">
+    <footer className="mt-auto border-t border-border-subtle">
       <div className="mx-auto flex max-w-(--container-page) flex-col gap-3.5 px-5 pt-6 pb-24 text-[13px] text-muted-foreground sm:h-[72px] sm:flex-row-reverse sm:items-center sm:justify-between sm:px-8 sm:py-0">
         <nav aria-label="Footer" className="flex flex-wrap gap-4 font-medium">
           {links.map((link) => (

@@ -34,6 +34,7 @@ import {
   captureRemovalFailed,
   captureRemovalSucceeded,
   captureResultDownloaded,
+  showResultSurvey,
 } from '#/lib/analytics'
 import { cn } from '#/lib/utils'
 import { CompareSlider, type CompareView } from './compare-slider'
@@ -308,6 +309,7 @@ export function Remover({
           `Background removed in ${(result.durationMs / 1000).toFixed(1)} seconds.`,
         )
         captureRemovalSucceeded(inputMethod, result.provider)
+        showResultSurvey()
         lastFile.current = null
       } catch (error) {
         if (

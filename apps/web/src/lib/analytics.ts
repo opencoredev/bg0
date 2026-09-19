@@ -7,6 +7,8 @@ import {
 
 const POSTHOG_KEY = 'phc_wVUY4kf7cB9GCtKztaQ4dk6ooYU8QaagC88breDYcgaj'
 const POSTHOG_HOST = 'https://us.i.posthog.com'
+const RESULT_SURVEY_ID = '01a0bb11-7aee-0000-29d8-a9f80fa33910'
+const RESULT_SURVEY_SHOWN_KEY = `bg0-survey-shown:${RESULT_SURVEY_ID}`
 
 type InputMethod = 'drop' | 'paste' | 'picker'
 type ResultView = 'compare' | 'original' | 'result'
@@ -17,6 +19,20 @@ type Feature =
   | `view_${ResultView}`
 
 let clientPromise: Promise<PostHog | null> | null = null
+let resultSurveyPending = false
+
+function observeResultSurveyRender(onRendered: () => void) {
+  const surveyClassName = `PostHogSurvey-${RESULT_SURVEY_ID}`
+  const finishWhenRendered = () => {
+    if (document.getElementsByClassName(surveyClassName).length === 0) return
+    observer.disconnect()
+    onRendered()
+  }
+  const observer = new MutationObserver(finishWhenRendered)
+  observer.observe(document.body, { childList: true, subtree: true })
+  finishWhenRendered()
+  return () => observer.disconnect()
+}
 
 function captureControlledException(
   client: PostHog,
@@ -77,6 +93,14 @@ function getClient(): Promise<PostHog | null> {
   return clientPromise
 }
 
+/**
+ * Start PostHog early in the page lifecycle so surveys are ready by the time a
+ * local removal completes. This does not capture an event or send image data.
+ */
+export function initializeAnalytics() {
+  void getClient()
+}
+
 function capture(event: string, properties: Record<string, string>) {
   void getClient().then((client) => client?.capture(event, properties))
 }
@@ -96,6 +120,63 @@ export function captureRemovalSucceeded(
   capture('background_removal_succeeded', {
     input_method: inputMethod,
     provider,
+  })
+}
+
+export function showResultSurvey() {
+  if (resultSurveyPending) return
+  try {
+    if (window.localStorage.getItem(RESULT_SURVEY_SHOWN_KEY)) return
+  } catch {
+    // PostHog can still display the survey when storage is unavailable.
+  }
+
+  resultSurveyPending = true
+  void getClient().then((client) => {
+    if (!client) {
+      resultSurveyPending = false
+      return
+    }
+
+    let handled = false
+    let unsubscribe = () => {}
+    let stopObserving = () => {}
+    const timeout = window.setTimeout(() => {
+      resultSurveyPending = false
+      unsubscribe()
+      stopObserving()
+    }, 120_000)
+
+    unsubscribe = client.onSurveysLoaded((surveys, context) => {
+      if (handled || !context?.isLoaded) return
+      handled = true
+      // The callback can run synchronously during registration, so defer the
+      // unsubscribe until its return value has been assigned.
+      queueMicrotask(() => unsubscribe())
+
+      if (!surveys.some((survey) => survey.id === RESULT_SURVEY_ID)) {
+        resultSurveyPending = false
+        window.clearTimeout(timeout)
+        return
+      }
+      stopObserving = observeResultSurveyRender(() => {
+        resultSurveyPending = false
+        window.clearTimeout(timeout)
+        try {
+          window.localStorage.setItem(RESULT_SURVEY_SHOWN_KEY, 'true')
+        } catch {
+          // A storage failure should not prevent a voluntary response.
+        }
+      })
+      client.displaySurvey(RESULT_SURVEY_ID, {
+        displayType: 'popover',
+        // BG0 controls the exact post-result timing and one-time frequency.
+        // The dashboard uses a never-captured sentinel event so the survey
+        // cannot also appear automatically on page load.
+        ignoreConditions: true,
+        ignoreDelay: true,
+      })
+    })
   })
 }
 

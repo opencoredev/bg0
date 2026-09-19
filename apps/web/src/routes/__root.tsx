@@ -136,7 +136,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
         <script type="application/ld+json">{STRUCTURED_DATA}</script>
         <HeadContent />
       </head>
-      <body>
+      <body className="flex min-h-dvh flex-col">
         <AnalyticsPageView />
         {children}
         <Scripts />
