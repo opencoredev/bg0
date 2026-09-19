@@ -1,4 +1,4 @@
-import type { CaptureResult, PostHog } from 'posthog-js'
+import type { PostHog } from 'posthog-js'
 import {
   createReportableError,
   type ReportableErrorContext,
@@ -21,20 +21,17 @@ type Feature =
 let clientPromise: Promise<PostHog | null> | null = null
 let resultSurveyPending = false
 
-function rememberShownResultSurvey(capture: CaptureResult) {
-  if (
-    capture.event !== 'survey shown' ||
-    capture.properties?.$survey_id !== RESULT_SURVEY_ID
-  ) {
-    return
+function observeResultSurveyRender(onRendered: () => void) {
+  const surveyClassName = `PostHogSurvey-${RESULT_SURVEY_ID}`
+  const finishWhenRendered = () => {
+    if (document.getElementsByClassName(surveyClassName).length === 0) return
+    observer.disconnect()
+    onRendered()
   }
-
-  resultSurveyPending = false
-  try {
-    window.localStorage.setItem(RESULT_SURVEY_SHOWN_KEY, 'true')
-  } catch {
-    // A storage failure should not prevent a voluntary response.
-  }
+  const observer = new MutationObserver(finishWhenRendered)
+  observer.observe(document.body, { childList: true, subtree: true })
+  finishWhenRendered()
+  return () => observer.disconnect()
 }
 
 function captureControlledException(
@@ -88,7 +85,6 @@ function getClient(): Promise<PostHog | null> {
           persistence: 'localStorage',
           before_send: sanitizeCapture,
         })
-        posthog.on('eventCaptured', rememberShownResultSurvey)
         registerUnhandledErrorTracking(posthog)
         return posthog
       })
@@ -144,10 +140,12 @@ export function showResultSurvey() {
 
     let handled = false
     let unsubscribe = () => {}
-    window.setTimeout(() => {
+    let stopObserving = () => {}
+    const timeout = window.setTimeout(() => {
       resultSurveyPending = false
       unsubscribe()
-    }, 15_000)
+      stopObserving()
+    }, 120_000)
 
     unsubscribe = client.onSurveysLoaded((surveys, context) => {
       if (handled || !context?.isLoaded) return
@@ -158,8 +156,18 @@ export function showResultSurvey() {
 
       if (!surveys.some((survey) => survey.id === RESULT_SURVEY_ID)) {
         resultSurveyPending = false
+        window.clearTimeout(timeout)
         return
       }
+      stopObserving = observeResultSurveyRender(() => {
+        resultSurveyPending = false
+        window.clearTimeout(timeout)
+        try {
+          window.localStorage.setItem(RESULT_SURVEY_SHOWN_KEY, 'true')
+        } catch {
+          // A storage failure should not prevent a voluntary response.
+        }
+      })
       client.displaySurvey(RESULT_SURVEY_ID, {
         displayType: 'popover',
         // BG0 controls the exact post-result timing and one-time frequency.
