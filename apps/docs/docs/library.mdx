@@ -49,6 +49,23 @@ are skipped for the current page session.
 `prepareBackgroundRemoval()` uses the same selection and shares initialization
 with removal calls. The `quality` option controls mask refinement separately.
 
+### iPhone and iPad
+
+On iOS, including desktop-mode iPad, the library uses a dedicated single-threaded
+WASM worker and optimized 512px BiRefNet-lite export. It does not attempt the
+larger desktop models. Output and `sourceBlob` are capped at 1280px on the longest
+edge without upscaling; `width` and `height` describe that bounded output, not the
+original photo. Use `sourceBlob` for a correctly sized comparison preview.
+
+Calls share a serialized worker. A queued aborted call rejects immediately without
+interrupting the active call; an active inference abort terminates its worker.
+The next removal can initialize a new worker. Refinement is optional: a failed
+refinement preserves the base mask, and a dead worker is not reused.
+
+The integrated UI processed three fixtures on a physical iPhone 13. Explicit
+repeated-run/refinement interactions, native HEIC, iPad, and other iPhones remain
+unverified; this is not a claim of universal iOS compatibility.
+
 ### Verification scope
 
 Local verification exercised full and lite BiRefNet with WebGPU and WASM on an
@@ -71,7 +88,7 @@ deployed origin have not been verified for this model-selection change.
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `blob` | `Blob` | PNG with alpha |
-| `sourceBlob` | `Blob \| undefined` | Browser-displayable PNG of a HEIC/HEIF source; omitted for natively displayable formats |
+| `sourceBlob` | `Blob \| undefined` | Displayable source PNG. Always provided on iOS at the bounded output dimensions; elsewhere provided for HEIC/HEIF and omitted for natively displayable formats |
 | `width`, `height` | `number` | Pixel size of the output |
 | `provider` | `'webgpu' \| 'wasm'` | Which backend ran the model |
 | `model` | `'birefnet' \| 'birefnet-lite'` | The model that produced the result, including any fallback |
@@ -104,4 +121,9 @@ Use this to warn users on the WASM path that a large photo will take longer.
 
 ## Model caching
 
-The selected model (about 452 MiB for full BiRefNet or 94 MiB for lite) is fetched from the Hugging Face hub and kept in browser storage. Calls in the same page reuse the initialized model. After a reload, BG0 reuses the stored files but still initializes ONNX and uploads weights to WebGPU. Browsers may evict the files under storage pressure. `clearModelCache()` resets hardware selection and failure state and clears the IndexedDB fallback cache. It releases engines after any pending preparation or removal calls finish, including refinement. Files already in the browser Cache API may still be reused.
+On desktop/Android, the selected model (about 452 MiB for full BiRefNet or 94 MiB for lite) is fetched from the Hugging Face hub and kept in browser storage. Calls in the same page reuse the initialized model. After a reload, BG0 reuses the stored files but still initializes ONNX and uploads weights to WebGPU. Browsers may evict the files under storage pressure. `clearModelCache()` resets hardware selection and failure state and clears the IndexedDB fallback cache. It releases engines after any pending preparation or removal calls finish, including refinement. Files already in the browser Cache API may still be reused.
+
+On iOS, model/runtime files are build-emitted same-origin assets cached by HTTP.
+Repeated calls reuse the worker; a page reload still initializes a new runtime.
+`clearModelCache()` retires the iOS worker after active work finishes. Normal HTTP
+cache rules still apply; this does not guarantee eviction of downloaded assets.
