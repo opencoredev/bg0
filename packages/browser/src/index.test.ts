@@ -495,3 +495,45 @@ describe('HEIC sources', () => {
     expect(toPng).not.toHaveBeenCalled()
   })
 })
+test.each(['no-context', 'draw', 'pixels'])(
+  'failed refinement releases its canvas: %s',
+  async (failure) => {
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'document')
+    const canvas = {
+      width: 0,
+      height: 0,
+      getContext: () =>
+        failure === 'no-context'
+          ? null
+          : {
+              drawImage() {
+                if (failure === 'draw') throw new Error('draw failed')
+              },
+              getImageData() {
+                throw new Error('pixels unavailable')
+              },
+            },
+    }
+    Object.defineProperty(globalThis, 'document', {
+      configurable: true,
+      value: { createElement: () => canvas },
+    })
+    spyOn(AutoModel, 'from_pretrained').mockResolvedValue(model() as never)
+    const closed = mock(() => undefined)
+    spyOn(image, 'decodeImage').mockResolvedValue({
+      width: 800,
+      height: 600,
+      close: closed,
+    } as unknown as ImageBitmap)
+    try {
+      expect((await removeBackground(png, { quality: 'quality' })).blob).toBe(
+        png,
+      )
+      expect([canvas.width, canvas.height]).toEqual([0, 0])
+      expect(closed).toHaveBeenCalledTimes(2)
+    } finally {
+      if (descriptor) Object.defineProperty(globalThis, 'document', descriptor)
+      else Reflect.deleteProperty(globalThis, 'document')
+    }
+  },
+)
