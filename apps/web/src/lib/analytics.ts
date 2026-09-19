@@ -7,6 +7,8 @@ import {
 
 const POSTHOG_KEY = 'phc_wVUY4kf7cB9GCtKztaQ4dk6ooYU8QaagC88breDYcgaj'
 const POSTHOG_HOST = 'https://us.i.posthog.com'
+const RESULT_SURVEY_ID = '01a0bb11-7aee-0000-29d8-a9f80fa33910'
+const RESULT_SURVEY_SHOWN_KEY = `bg0-survey-shown:${RESULT_SURVEY_ID}`
 
 type InputMethod = 'drop' | 'paste' | 'picker'
 type ResultView = 'compare' | 'original' | 'result'
@@ -77,6 +79,14 @@ function getClient(): Promise<PostHog | null> {
   return clientPromise
 }
 
+/**
+ * Start PostHog early in the page lifecycle so surveys are ready by the time a
+ * local removal completes. This does not capture an event or send image data.
+ */
+export function initializeAnalytics() {
+  void getClient()
+}
+
 function capture(event: string, properties: Record<string, string>) {
   void getClient().then((client) => client?.capture(event, properties))
 }
@@ -96,6 +106,39 @@ export function captureRemovalSucceeded(
   capture('background_removal_succeeded', {
     input_method: inputMethod,
     provider,
+  })
+}
+
+export function showResultSurvey() {
+  try {
+    if (window.localStorage.getItem(RESULT_SURVEY_SHOWN_KEY)) return
+  } catch {
+    // PostHog can still display the survey when storage is unavailable.
+  }
+
+  void getClient().then((client) => {
+    if (!client) return
+    client.getSurveys((surveys, context) => {
+      if (
+        !context?.isLoaded ||
+        !surveys.some((survey) => survey.id === RESULT_SURVEY_ID)
+      ) {
+        return
+      }
+      client.displaySurvey(RESULT_SURVEY_ID, {
+        displayType: 'popover',
+        // BG0 controls the exact post-result timing and one-time frequency.
+        // The dashboard uses a never-captured sentinel event so the survey
+        // cannot also appear automatically on page load.
+        ignoreConditions: true,
+        ignoreDelay: true,
+      })
+      try {
+        window.localStorage.setItem(RESULT_SURVEY_SHOWN_KEY, 'true')
+      } catch {
+        // A storage failure should not prevent a voluntary response.
+      }
+    })
   })
 }
 

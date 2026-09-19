@@ -3,6 +3,7 @@ import type { CaptureResult, Properties } from 'posthog-js'
 const DATA_IMAGE_URL = /data:image\//i
 const BLOB_URL = /\bblob:[^\s"')]+/gi
 const PRIVATE_IMAGE_URL = '[private image URL]'
+const SURVEY_SENT_EVENT = 'survey sent'
 const ALLOWED_SURVEY_RESPONSES = new Set([
   'Great',
   'Good',
@@ -12,7 +13,17 @@ const ALLOWED_SURVEY_RESPONSES = new Set([
   'Part of the subject was removed',
   'Edges look rough',
   'Transparency looks wrong',
+  'Not at all likely',
+  'Extremely likely',
+  'Background removal quality',
+  'Speed',
+  'Ease of use',
+  'Privacy',
+  'Something else',
 ])
+
+const ALLOWED_RECOMMENDATION_SCORE_MIN = 0
+const ALLOWED_RECOMMENDATION_SCORE_MAX = 10
 
 export type ReportableErrorContext =
   | {
@@ -61,7 +72,7 @@ function safeProperties(properties: Properties | undefined) {
 export function sanitizeCapture(capture: CaptureResult | null) {
   if (!capture) return null
   if (
-    capture.event === '$survey_response' &&
+    capture.event === SURVEY_SENT_EVENT &&
     !hasOnlyAllowedSurveyResponses(capture.properties)
   ) {
     return null
@@ -83,17 +94,33 @@ function hasOnlyAllowedSurveyResponses(properties: Properties | undefined) {
     responses.length > 0 &&
     responses.every(([, value]) => {
       if (typeof value === 'string') {
-        return ALLOWED_SURVEY_RESPONSES.has(value)
+        return (
+          ALLOWED_SURVEY_RESPONSES.has(value) ||
+          isRecommendationScore(value)
+        )
       }
+      if (typeof value === 'number') return isRecommendationScore(value)
       return (
         Array.isArray(value) &&
         value.length > 0 &&
         value.every(
           (answer) =>
-            typeof answer === 'string' && ALLOWED_SURVEY_RESPONSES.has(answer),
+            (typeof answer === 'string' || typeof answer === 'number') &&
+            (ALLOWED_SURVEY_RESPONSES.has(String(answer)) ||
+              isRecommendationScore(answer)),
         )
       )
     })
+  )
+}
+
+function isRecommendationScore(value: string | number) {
+  if (typeof value === 'string' && !/^\d{1,2}$/.test(value)) return false
+  const score = typeof value === 'number' ? value : Number(value)
+  return (
+    Number.isInteger(score) &&
+    score >= ALLOWED_RECOMMENDATION_SCORE_MIN &&
+    score <= ALLOWED_RECOMMENDATION_SCORE_MAX
   )
 }
 
