@@ -61,6 +61,7 @@ export interface RemoveBackgroundOptions {
 
 export interface BackgroundRemovalResult {
   blob: Blob
+  /** Displayable source PNG: always bounded on iOS; otherwise provided for HEIC/HEIF. */
   sourceBlob?: Blob
   width: number
   height: number
@@ -285,13 +286,16 @@ export async function removeBackground(
           const canvas = document.createElement('canvas')
           canvas.width = w
           canvas.height = h
-          const ctx = canvas.getContext('2d', { willReadFrequently: true })
-          if (ctx) {
-            ctx.drawImage(image, 0, 0, w, h)
-            const data = ctx.getImageData(0, 0, w, h).data
+          try {
+            const ctx = canvas.getContext('2d', { willReadFrequently: true })
+            if (ctx) {
+              ctx.drawImage(image, 0, 0, w, h)
+              const data = ctx.getImageData(0, 0, w, h).data
+              highResSource = new RawImage(data, w, h, 4)
+            }
+          } finally {
             canvas.width = 0
             canvas.height = 0
-            highResSource = new RawImage(data, w, h, 4)
           }
         } finally {
           image.close()

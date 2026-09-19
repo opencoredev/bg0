@@ -45,13 +45,10 @@ ort.env.wasm.wasmPaths = {
       const values=outputs[session.outputNames[0]].data;
       if(values.length!==size*size) throw new Error('Unexpected mask');
       const alpha=new Float32Array(values.length);
-      let low=1, high=0;
       for(let i=0;i<values.length;i++) {
         if(!Number.isFinite(values[i])) throw new Error('Invalid mask');
         alpha[i]=1/(1+Math.exp(-values[i]));
-        low=Math.min(low,alpha[i]);high=Math.max(high,alpha[i]);
       }
-      if(high-low<0.005)throw new Error('No usable foreground');
       self.postMessage({id,alpha:alpha.buffer},[alpha.buffer]);
     } else throw new Error('Unknown action');
   } catch(error) {
