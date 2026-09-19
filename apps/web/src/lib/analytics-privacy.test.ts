@@ -96,6 +96,25 @@ describe('analytics privacy', () => {
     expect(outOfRange).toBeNull()
   })
 
+  test('removes dashboard-controlled survey question snapshots', () => {
+    const allowed = sanitizeCapture({
+      event: 'survey sent',
+      properties: {
+        $survey_id: 'recommendation',
+        $survey_response_rating: 9,
+        $survey_questions: [
+          {
+            question: 'Why?',
+            response: 'vacation.png at https://example.com/photo.jpg',
+          },
+        ],
+      },
+    } as unknown as CaptureResult)
+
+    expect(allowed).not.toBeNull()
+    expect(allowed?.properties.$survey_questions).toBeUndefined()
+  })
+
   test('does not forward arbitrary exception metadata', () => {
     const privateError = new Error(
       'vacation.png (4032x3024) failed at blob:https://bg0.dev/private',

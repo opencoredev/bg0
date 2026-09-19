@@ -1,4 +1,4 @@
-import type { PostHog } from 'posthog-js'
+import type { CaptureResult, PostHog } from 'posthog-js'
 import {
   createReportableError,
   type ReportableErrorContext,
@@ -19,6 +19,23 @@ type Feature =
   | `view_${ResultView}`
 
 let clientPromise: Promise<PostHog | null> | null = null
+let resultSurveyPending = false
+
+function rememberShownResultSurvey(capture: CaptureResult) {
+  if (
+    capture.event !== 'survey shown' ||
+    capture.properties?.$survey_id !== RESULT_SURVEY_ID
+  ) {
+    return
+  }
+
+  resultSurveyPending = false
+  try {
+    window.localStorage.setItem(RESULT_SURVEY_SHOWN_KEY, 'true')
+  } catch {
+    // A storage failure should not prevent a voluntary response.
+  }
+}
 
 function captureControlledException(
   client: PostHog,
@@ -71,6 +88,7 @@ function getClient(): Promise<PostHog | null> {
           persistence: 'localStorage',
           before_send: sanitizeCapture,
         })
+        posthog.on('eventCaptured', rememberShownResultSurvey)
         registerUnhandledErrorTracking(posthog)
         return posthog
       })
@@ -110,19 +128,36 @@ export function captureRemovalSucceeded(
 }
 
 export function showResultSurvey() {
+  if (resultSurveyPending) return
   try {
     if (window.localStorage.getItem(RESULT_SURVEY_SHOWN_KEY)) return
   } catch {
     // PostHog can still display the survey when storage is unavailable.
   }
 
+  resultSurveyPending = true
   void getClient().then((client) => {
-    if (!client) return
-    client.getSurveys((surveys, context) => {
-      if (
-        !context?.isLoaded ||
-        !surveys.some((survey) => survey.id === RESULT_SURVEY_ID)
-      ) {
+    if (!client) {
+      resultSurveyPending = false
+      return
+    }
+
+    let handled = false
+    let unsubscribe = () => {}
+    window.setTimeout(() => {
+      resultSurveyPending = false
+      unsubscribe()
+    }, 15_000)
+
+    unsubscribe = client.onSurveysLoaded((surveys, context) => {
+      if (handled || !context?.isLoaded) return
+      handled = true
+      // The callback can run synchronously during registration, so defer the
+      // unsubscribe until its return value has been assigned.
+      queueMicrotask(() => unsubscribe())
+
+      if (!surveys.some((survey) => survey.id === RESULT_SURVEY_ID)) {
+        resultSurveyPending = false
         return
       }
       client.displaySurvey(RESULT_SURVEY_ID, {
@@ -133,11 +168,6 @@ export function showResultSurvey() {
         ignoreConditions: true,
         ignoreDelay: true,
       })
-      try {
-        window.localStorage.setItem(RESULT_SURVEY_SHOWN_KEY, 'true')
-      } catch {
-        // A storage failure should not prevent a voluntary response.
-      }
     })
   })
 }

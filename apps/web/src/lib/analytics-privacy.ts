@@ -71,15 +71,22 @@ function safeProperties(properties: Properties | undefined) {
 
 export function sanitizeCapture(capture: CaptureResult | null) {
   if (!capture) return null
+  const properties = safeProperties(capture.properties) ?? {}
   if (
     capture.event === SURVEY_SENT_EVENT &&
-    !hasOnlyAllowedSurveyResponses(capture.properties)
+    !hasOnlyAllowedSurveyResponses(properties)
   ) {
     return null
   }
+  if (capture.event === SURVEY_SENT_EVENT) {
+    // PostHog includes a dashboard-controlled question snapshot. Response
+    // properties are validated above; the snapshot is not needed for BG0's
+    // fixed survey and could otherwise contain newly added free text.
+    delete properties.$survey_questions
+  }
   return {
     ...capture,
-    properties: safeProperties(capture.properties) ?? {},
+    properties,
     $set: safeProperties(capture.$set),
     $set_once: safeProperties(capture.$set_once),
   }
