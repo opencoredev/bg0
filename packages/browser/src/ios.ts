@@ -17,17 +17,39 @@ import { iosOutputSize, normalizeIosPixels } from './ios-pixels'
 let queue: Promise<unknown> = Promise.resolve()
 let cached: IosWorker | undefined
 let active: IosWorker | undefined
-function serialize<T>(operation: () => Promise<T>): Promise<T> {
-  const result = queue.then(operation, operation)
-  queue = result.catch(() => undefined)
-  return result
+function serialize<T>(
+  operation: () => Promise<T>,
+  signal?: AbortSignal,
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const abort = () =>
+      reject(
+        new BackgroundRemovalError('cancelled', 'Processing was cancelled.'),
+      )
+    if (signal?.aborted) {
+      abort()
+      return
+    }
+    signal?.addEventListener('abort', abort, { once: true })
+    // Reject a queued caller immediately without releasing the active queue slot.
+    // The skipped slot must still wait for earlier work to prevent overlapping heaps.
+    queue = queue.then(async () => {
+      signal?.removeEventListener('abort', abort)
+      if (signal?.aborted) return
+      try {
+        resolve(await operation())
+      } catch (error) {
+        reject(error)
+      }
+    })
+  })
 }
 function cancelled(signal?: AbortSignal) {
   if (signal?.aborted)
     throw new BackgroundRemovalError('cancelled', 'Processing was cancelled.')
 }
 function engine() {
-  cached ??= new IosWorker()
+  if (!cached || cached.isDisposed) cached = new IosWorker()
   return cached
 }
 
@@ -156,6 +178,7 @@ export function removeIosBackground(
                 },
               }
           } catch {
+            if (worker.isDisposed && cached === worker) cached = undefined
             cancelled(options.signal)
           } finally {
             sourceCanvas.width =
@@ -207,7 +230,7 @@ export function removeIosBackground(
         if (cached !== worker) worker.dispose()
       }
     }
-  })
+  }, options.signal)
 }
 
 export class IosWorker {
@@ -260,6 +283,9 @@ export class IosWorker {
       )
     this.worker.onmessageerror = () =>
       this.dispose(new Error('Worker response unavailable'))
+  }
+  get isDisposed(): boolean {
+    return this.dead
   }
   load(): Promise<void> {
     this.loaded ??= this.request('load').then(() => undefined)

@@ -207,3 +207,133 @@ test('cache clear during finishing preserves active work then retires worker', a
   await removeBackground(png)
   expect(constructed).toBe(2)
 })
+
+test('queued abort rejects before active inference finishes and does not start work', async () => {
+  let finish!: () => void
+  let started!: () => void
+  const began = new Promise<void>((resolve) => {
+    started = resolve
+  })
+  const held = new Promise<Blob>((resolve) => {
+    finish = () => resolve(png)
+  })
+  const composite = spyOn(image, 'maskToPng').mockImplementationOnce(() => {
+    started()
+    return held
+  })
+  const first = removeBackground(png)
+  await began
+  const controller = new AbortController()
+  const second = removeBackground(png, { signal: controller.signal })
+  const outcome = second.then(
+    () => 'resolved',
+    (error) => error.code,
+  )
+  controller.abort()
+  const third = removeBackground(png)
+  try {
+    expect(
+      await Promise.race([
+        outcome,
+        new Promise((resolve) =>
+          setTimeout(() => resolve('still waiting'), 30),
+        ),
+      ]),
+    ).toBe('cancelled')
+    expect(disposed).toBe(0)
+    expect(image.prepareImageForInference).toHaveBeenCalledTimes(1)
+  } finally {
+    finish()
+    await first
+    await outcome
+  }
+  expect((await third).blob).toBe(png)
+  expect(composite).toHaveBeenCalledTimes(2)
+})
+
+test.each(['onerror', 'onmessageerror'] as const)(
+  'refinement %s preserves base output and next photo gets a live worker',
+  async (event) => {
+    spyOn(image, 'findRefinementCrop').mockReturnValue({
+      left: 0,
+      top: 0,
+      right: 256,
+      bottom: 256,
+    })
+    const documentDescriptor = Object.getOwnPropertyDescriptor(
+      globalThis,
+      'document',
+    )
+    const imageDataDescriptor = Object.getOwnPropertyDescriptor(
+      globalThis,
+      'ImageData',
+    )
+    Object.defineProperty(globalThis, 'ImageData', {
+      configurable: true,
+      value: class {},
+    })
+    Object.defineProperty(globalThis, 'document', {
+      configurable: true,
+      value: {
+        createElement: () => ({
+          width: 0,
+          height: 0,
+          getContext: () => ({
+            putImageData() {},
+            drawImage() {},
+            getImageData: () => ({
+              data: new Uint8ClampedArray(512 * 512 * 4),
+            }),
+          }),
+        }),
+      },
+    })
+    let workers = 0
+    Object.defineProperty(globalThis, 'Worker', {
+      configurable: true,
+      value: class {
+        onmessage?: (event: { data: object }) => void
+        onerror?: () => void
+        onmessageerror?: () => void
+        runs = 0
+        ordinal = ++workers
+        postMessage(message: { id: number; type: string }) {
+          queueMicrotask(() => {
+            if (
+              message.type === 'run' &&
+              ++this.runs === 2 &&
+              this.ordinal === 1
+            )
+              this[event]?.()
+            else
+              this.onmessage?.({
+                data:
+                  message.type === 'load'
+                    ? { id: message.id, ready: true }
+                    : {
+                        id: message.id,
+                        alpha: new Float32Array(512 * 512).fill(0.5).buffer,
+                      },
+              })
+          })
+        }
+        terminate() {}
+      },
+    })
+    try {
+      expect((await removeBackground(png, { quality: 'quality' })).blob).toBe(
+        png,
+      )
+      expect((await removeBackground(png)).blob).toBe(png)
+      expect(workers).toBe(2)
+    } finally {
+      for (const [name, descriptor] of [
+        ['document', documentDescriptor],
+        ['ImageData', imageDataDescriptor],
+      ] as const) {
+        if (descriptor) Object.defineProperty(globalThis, name, descriptor)
+        else Reflect.deleteProperty(globalThis, name)
+      }
+    }
+  },
+)
