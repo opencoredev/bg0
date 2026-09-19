@@ -2,5 +2,5 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "buildCommand": "blume build",
   "outputDirectory": "dist",
-  "installCommand": "bunx bun@1.4.2 install --frozen-lockfile"
+  "installCommand": "bun install --frozen-lockfile"
 }
