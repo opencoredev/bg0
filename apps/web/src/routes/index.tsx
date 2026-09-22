@@ -21,9 +21,32 @@ function Home() {
         <p className="mt-2.5 text-[15px] leading-[22px] text-muted-foreground sm:mt-4 sm:text-center sm:text-[17px] sm:leading-[26px]">
           Choose an image and download a transparent PNG. Nothing is uploaded.
         </p>
-        <div className="mt-6 sm:mt-9">
+        <div id="remover" className="mt-6 scroll-mt-6 sm:mt-9">
           <BrowserRemover />
         </div>
+        <nav
+          aria-label="Background removal guides"
+          className="mx-auto mt-10 flex max-w-2xl flex-wrap justify-center gap-x-5 gap-y-2 text-sm text-muted-foreground"
+        >
+          <a
+            className="underline-offset-4 hover:text-foreground hover:underline"
+            href="/background-remover"
+          >
+            Free background remover
+          </a>
+          <a
+            className="underline-offset-4 hover:text-foreground hover:underline"
+            href="/transparent-png"
+          >
+            Make a transparent PNG
+          </a>
+          <a
+            className="underline-offset-4 hover:text-foreground hover:underline"
+            href="/product-photo-background-remover"
+          >
+            Product photo remover
+          </a>
+        </nav>
       </section>
     </main>
   )

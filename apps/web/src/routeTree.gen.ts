@@ -10,8 +10,11 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as BackgroundRemoverRouteImport } from './routes/background-remover'
 import { Route as PrivacyRouteImport } from './routes/privacy'
+import { Route as ProductPhotoBackgroundRemoverRouteImport } from './routes/product-photo-background-remover'
 import { Route as TermsRouteImport } from './routes/terms'
+import { Route as TransparentPngRouteImport } from './routes/transparent-png'
 import { Route as DocsSplatRouteImport } from './routes/docs.$'
 
 const IndexRoute = IndexRouteImport.update({
@@ -19,14 +22,30 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const BackgroundRemoverRoute = BackgroundRemoverRouteImport.update({
+  id: '/background-remover',
+  path: '/background-remover',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const PrivacyRoute = PrivacyRouteImport.update({
   id: '/privacy',
   path: '/privacy',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ProductPhotoBackgroundRemoverRoute =
+  ProductPhotoBackgroundRemoverRouteImport.update({
+    id: '/product-photo-background-remover',
+    path: '/product-photo-background-remover',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const TermsRoute = TermsRouteImport.update({
   id: '/terms',
   path: '/terms',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TransparentPngRoute = TransparentPngRouteImport.update({
+  id: '/transparent-png',
+  path: '/transparent-png',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DocsSplatRoute = DocsSplatRouteImport.update({
@@ -37,35 +56,69 @@ const DocsSplatRoute = DocsSplatRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/background-remover': typeof BackgroundRemoverRoute
   '/privacy': typeof PrivacyRoute
+  '/product-photo-background-remover': typeof ProductPhotoBackgroundRemoverRoute
   '/terms': typeof TermsRoute
+  '/transparent-png': typeof TransparentPngRoute
   '/docs/$': typeof DocsSplatRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/background-remover': typeof BackgroundRemoverRoute
   '/privacy': typeof PrivacyRoute
+  '/product-photo-background-remover': typeof ProductPhotoBackgroundRemoverRoute
   '/terms': typeof TermsRoute
+  '/transparent-png': typeof TransparentPngRoute
   '/docs/$': typeof DocsSplatRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/background-remover': typeof BackgroundRemoverRoute
   '/privacy': typeof PrivacyRoute
+  '/product-photo-background-remover': typeof ProductPhotoBackgroundRemoverRoute
   '/terms': typeof TermsRoute
+  '/transparent-png': typeof TransparentPngRoute
   '/docs/$': typeof DocsSplatRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/privacy' | '/terms' | '/docs/$'
+  fullPaths:
+    | '/'
+    | '/background-remover'
+    | '/privacy'
+    | '/product-photo-background-remover'
+    | '/terms'
+    | '/transparent-png'
+    | '/docs/$'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/privacy' | '/terms' | '/docs/$'
-  id: '__root__' | '/' | '/privacy' | '/terms' | '/docs/$'
+  to:
+    | '/'
+    | '/background-remover'
+    | '/privacy'
+    | '/product-photo-background-remover'
+    | '/terms'
+    | '/transparent-png'
+    | '/docs/$'
+  id:
+    | '__root__'
+    | '/'
+    | '/background-remover'
+    | '/privacy'
+    | '/product-photo-background-remover'
+    | '/terms'
+    | '/transparent-png'
+    | '/docs/$'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  BackgroundRemoverRoute: typeof BackgroundRemoverRoute
   PrivacyRoute: typeof PrivacyRoute
+  ProductPhotoBackgroundRemoverRoute: typeof ProductPhotoBackgroundRemoverRoute
   TermsRoute: typeof TermsRoute
+  TransparentPngRoute: typeof TransparentPngRoute
   DocsSplatRoute: typeof DocsSplatRoute
 }
 
@@ -78,6 +131,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/background-remover': {
+      id: '/background-remover'
+      path: '/background-remover'
+      fullPath: '/background-remover'
+      preLoaderRoute: typeof BackgroundRemoverRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/privacy': {
       id: '/privacy'
       path: '/privacy'
@@ -85,11 +145,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PrivacyRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/product-photo-background-remover': {
+      id: '/product-photo-background-remover'
+      path: '/product-photo-background-remover'
+      fullPath: '/product-photo-background-remover'
+      preLoaderRoute: typeof ProductPhotoBackgroundRemoverRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/terms': {
       id: '/terms'
       path: '/terms'
       fullPath: '/terms'
       preLoaderRoute: typeof TermsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/transparent-png': {
+      id: '/transparent-png'
+      path: '/transparent-png'
+      fullPath: '/transparent-png'
+      preLoaderRoute: typeof TransparentPngRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/docs/$': {
@@ -104,8 +178,11 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  BackgroundRemoverRoute: BackgroundRemoverRoute,
   PrivacyRoute: PrivacyRoute,
+  ProductPhotoBackgroundRemoverRoute: ProductPhotoBackgroundRemoverRoute,
   TermsRoute: TermsRoute,
+  TransparentPngRoute: TransparentPngRoute,
   DocsSplatRoute: DocsSplatRoute,
 }
 export const routeTree = rootRouteImport
