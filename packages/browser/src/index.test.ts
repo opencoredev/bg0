@@ -410,3 +410,88 @@ describe('automatic model lifecycle', () => {
     },
   )
 })
+
+describe('HEIC sources', () => {
+  // ftyp box: size 16, 'ftyp', major 'heic', minor 0.
+  const heic = new Blob(
+    [
+      new Uint8Array([
+        0, 0, 0, 16, 0x66, 0x74, 0x79, 0x70, 0x68, 0x65, 0x69, 0x63, 0, 0, 0, 0,
+      ]),
+    ],
+    { type: 'image/heic' },
+  )
+
+  test('decodes a HEIC source once and runs the pipeline on the PNG transcode', async () => {
+    const heicBitmap = {
+      width: 800,
+      height: 600,
+      close: mock(() => undefined),
+    }
+    const pngBitmap = {
+      width: 800,
+      height: 600,
+      close: mock(() => undefined),
+    }
+    const transcoded = new Blob(['transcoded'], { type: 'image/png' })
+    const decode = spyOn(image, 'decodeImage').mockImplementation(
+      async (_input, format) =>
+        (format === 'heic' ? heicBitmap : pngBitmap) as ImageBitmap,
+    )
+    const toPng = spyOn(image, 'imageToPng').mockResolvedValue(transcoded)
+    spyOn(AutoModel, 'from_pretrained').mockResolvedValue(model() as never)
+
+    const result = await removeBackground(heic, { quality: 'quality' })
+
+    expect(decode.mock.calls).toEqual([
+      [heic, 'heic'],
+      [transcoded, 'png'],
+      [transcoded, 'png'],
+    ])
+    expect(toPng.mock.calls).toEqual([[heicBitmap]])
+    expect(image.prepareImageForInference).toHaveBeenCalledWith(
+      transcoded,
+      expect.any(Number),
+      expect.any(Number),
+      'png',
+    )
+    expect(
+      (image.maskToPng as ReturnType<typeof spyOn>).mock.calls[0][0],
+    ).toBe(pngBitmap)
+    expect(heicBitmap.close).toHaveBeenCalledTimes(1)
+    expect(pngBitmap.close).toHaveBeenCalledTimes(2)
+    expect(result.sourceBlob).toBe(transcoded)
+  })
+
+  test('cancellation during the HEIC decode skips the PNG transcode', async () => {
+    const controller = new AbortController()
+    const heicBitmap = {
+      width: 800,
+      height: 600,
+      close: mock(() => undefined),
+    }
+    const transcoded = new Blob(['transcoded'], { type: 'image/png' })
+    spyOn(image, 'decodeImage').mockImplementation(async () => {
+      controller.abort()
+      return heicBitmap as ImageBitmap
+    })
+    const toPng = spyOn(image, 'imageToPng').mockResolvedValue(transcoded)
+    spyOn(AutoModel, 'from_pretrained').mockResolvedValue(model() as never)
+
+    await expect(
+      removeBackground(heic, { signal: controller.signal }),
+    ).rejects.toMatchObject({ code: 'cancelled' })
+    expect(toPng).not.toHaveBeenCalled()
+    expect(heicBitmap.close).toHaveBeenCalledTimes(1)
+  })
+
+  test('returns no sourceBlob for natively displayable formats', async () => {
+    const toPng = spyOn(image, 'imageToPng')
+    spyOn(AutoModel, 'from_pretrained').mockResolvedValue(model() as never)
+
+    const result = await removeBackground(png)
+
+    expect(result.sourceBlob).toBeUndefined()
+    expect(toPng).not.toHaveBeenCalled()
+  })
+})

@@ -178,13 +178,31 @@ export async function removeBackground(
     throwIfCancelled(options.signal)
     const format = await validateImage(input)
     notify({ stage: 'preparing', progress: 0.03, message: 'Preparing image…' })
+    // Browsers without native HEIC decoding run the WASM decoder over the full
+    // photo. Decode once and keep a compressed PNG for the remaining passes
+    // instead of holding the decoded bitmap while the model initializes.
+    let source = input
+    let sourceFormat = format
+    let sourceBlob: Blob | undefined
+    if (format === 'heic') {
+      const image = await decodeImage(input, format)
+      try {
+        throwIfCancelled(options.signal)
+        sourceBlob = await imageToPng(image)
+      } finally {
+        image.close()
+      }
+      source = sourceBlob
+      sourceFormat = 'png'
+    }
+    throwIfCancelled(options.signal)
     const choices = await getPreferredChoices()
     throwIfCancelled(options.signal)
     const preparedImage = await prepareImageForInference(
-      input,
+      source,
       choices[0].definition.inputSize,
       choices[0].definition.inputSize,
-      format,
+      sourceFormat,
     )
     throwIfCancelled(options.signal)
 
@@ -212,7 +230,7 @@ export async function removeBackground(
       message: 'Removing background…',
     })
     const { RawImage } = await import('@huggingface/transformers')
-    const source = new RawImage(
+    const modelInput = new RawImage(
       preparedImage.data,
       preparedImage.width,
       preparedImage.height,
@@ -222,7 +240,7 @@ export async function removeBackground(
     while (true) {
       throwIfCancelled(options.signal)
       try {
-        inference = await inferMask(engine, source)
+        inference = await inferMask(engine, modelInput)
         if (
           !inference.inspection.valid ||
           (engine.provider === 'webgpu' &&
@@ -276,7 +294,7 @@ export async function removeBackground(
     if (quality === 'quality') {
       try {
         throwIfCancelled(options.signal)
-        const image = await decodeImage(input, format)
+        const image = await decodeImage(source, sourceFormat)
         try {
           const maxDim = Math.max(image.width, image.height)
           const scale = maxDim > 1024 ? 1024 / maxDim : 1
@@ -304,7 +322,7 @@ export async function removeBackground(
 
     const refinement = await createMaskRefinement({
       quality,
-      source,
+      source: modelInput,
       highResSource,
       outputWidth: preparedImage.sourceWidth,
       outputHeight: preparedImage.sourceHeight,
@@ -321,10 +339,8 @@ export async function removeBackground(
     })
 
     notify({ stage: 'finishing', progress: 0.92, message: 'Finishing edges…' })
-    const image = await decodeImage(input, format)
+    const image = await decodeImage(source, sourceFormat)
     decodedImage = image
-    throwIfCancelled(options.signal)
-    const sourceBlob = format === 'heic' ? await imageToPng(image) : undefined
     throwIfCancelled(options.signal)
     const blob = await maskToPng(
       image,
