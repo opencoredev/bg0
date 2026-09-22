@@ -192,6 +192,7 @@ export function Remover({
   const [announcement, setAnnouncement] = useState('')
   const [showIosExportNotice, setShowIosExportNotice] = useState(false)
   const [mobile, setMobile] = useState(false)
+  const [failedPreviewUrl, setFailedPreviewUrl] = useState<string>()
   const pickerRef = useRef<HTMLDivElement>(null)
   const [pickerOffscreen, setPickerOffscreen] = useState(false)
 
@@ -692,11 +693,15 @@ export function Remover({
             aria-busy="true"
             className="t-stage relative flex min-h-[220px] items-center justify-center bg-checker sm:min-h-[400px]"
           >
-            {!mobile && (
+            {/* A source the browser cannot decode (HEIC on Chromium) fires
+                error; drop the preview instead of showing alt text. */}
+            {!mobile && state.sourceUrl !== failedPreviewUrl && (
               <img
+                key={state.sourceUrl}
                 src={state.sourceUrl}
                 alt="Original being processed"
                 draggable={false}
+                onError={() => setFailedPreviewUrl(state.sourceUrl)}
                 className="absolute inset-0 size-full object-contain"
               />
             )}

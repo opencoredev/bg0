@@ -258,6 +258,60 @@ describe('Remover image pickers', () => {
     }
   })
 
+  test('hides the processing preview when the browser cannot decode the source', async () => {
+    const urls = trackObjectUrls()
+    const request = deferred<BackgroundRemovalResult>()
+    const view = render(
+      <Remover
+        removeBackgroundImpl={() => request.promise}
+        waitForPaintImpl={() => Promise.resolve()}
+      />,
+    )
+
+    try {
+      selectFile(view, new File(['heic'], 'photo.heic', { type: 'image/heic' }))
+      const first = view.getByRole('img', {
+        name: 'Original being processed',
+      })
+
+      selectFile(view, new File(['image'], 'photo.png', { type: 'image/png' }))
+      expect(
+        view
+          .getByRole('img', { name: 'Original being processed' })
+          .getAttribute('src'),
+      ).toBe('blob:test-2')
+      expect(first.isConnected).toBe(false)
+
+      fireEvent.error(first)
+      expect(
+        view
+          .getByRole('img', { name: 'Original being processed' })
+          .getAttribute('src'),
+      ).toBe('blob:test-2')
+
+      fireEvent.error(
+        view.getByRole('img', { name: 'Original being processed' }),
+      )
+      expect(
+        view.queryByRole('img', { name: 'Original being processed' }),
+      ).toBeNull()
+      expect(view.getByText('Preparing…')).toBeTruthy()
+
+      selectFile(
+        view,
+        new File(['image2'], 'photo-2.png', { type: 'image/png' }),
+      )
+      expect(
+        view
+          .getByRole('img', { name: 'Original being processed' })
+          .getAttribute('src'),
+      ).toBe('blob:test-3')
+    } finally {
+      view.unmount()
+      urls.restore()
+    }
+  })
+
   test('keeps photo and file picker actions distinct across entry points', () => {
     const view = render(<Remover />)
     const photoInput = view.getByLabelText('Choose a photo')
