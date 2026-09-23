@@ -8,6 +8,7 @@ import {
 
 import { AnalyticsPageView } from '#/components/analytics-page-view'
 import { AppError } from '#/components/app-error'
+import { LAUNCH_BANNER_SCRIPT, LaunchBanner } from '#/components/launch-banner'
 import { SiteFooter } from '#/components/site-footer'
 import { SiteHeader } from '#/components/site-header'
 import { Button } from '#/components/ui/button'
@@ -103,6 +104,7 @@ function RootLayout() {
   const { stars } = Route.useLoaderData()
   return (
     <>
+      <LaunchBanner />
       <SiteHeader stars={stars} />
       <Outlet />
       <SiteFooter />
@@ -133,6 +135,8 @@ function RootDocument({ children }: { children: React.ReactNode }) {
       <head>
         {/* biome-ignore lint/security/noDangerouslySetInnerHtml: this static script runs before CSS to prevent a theme flash and contains no user input. */}
         <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
+        {/* biome-ignore lint/security/noDangerouslySetInnerHtml: this static script hides a dismissed banner before paint and contains no user input. */}
+        <script dangerouslySetInnerHTML={{ __html: LAUNCH_BANNER_SCRIPT }} />
         <script type="application/ld+json">{STRUCTURED_DATA}</script>
         <HeadContent />
       </head>
