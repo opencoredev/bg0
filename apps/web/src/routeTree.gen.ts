@@ -10,11 +10,17 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as SplatRouteImport } from './routes/$'
+import { Route as AboutRouteImport } from './routes/about'
 import { Route as BackgroundRemoverRouteImport } from './routes/background-remover'
+import { Route as ContactRouteImport } from './routes/contact'
 import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as ProductPhotoBackgroundRemoverRouteImport } from './routes/product-photo-background-remover'
 import { Route as TermsRouteImport } from './routes/terms'
 import { Route as TransparentPngRouteImport } from './routes/transparent-png'
+import { Route as ApiSplatRouteImport } from './routes/api.$'
+import { Route as ApiCapabilitiesRouteImport } from './routes/api.capabilities'
+import { Route as ApiHealthRouteImport } from './routes/api.health'
 import { Route as DocsSplatRouteImport } from './routes/docs.$'
 
 const IndexRoute = IndexRouteImport.update({
@@ -22,9 +28,24 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SplatRoute = SplatRouteImport.update({
+  id: '/$',
+  path: '/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AboutRoute = AboutRouteImport.update({
+  id: '/about',
+  path: '/about',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const BackgroundRemoverRoute = BackgroundRemoverRouteImport.update({
   id: '/background-remover',
   path: '/background-remover',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ContactRoute = ContactRouteImport.update({
+  id: '/contact',
+  path: '/contact',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PrivacyRoute = PrivacyRouteImport.update({
@@ -48,6 +69,21 @@ const TransparentPngRoute = TransparentPngRouteImport.update({
   path: '/transparent-png',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiSplatRoute = ApiSplatRouteImport.update({
+  id: '/api/$',
+  path: '/api/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiCapabilitiesRoute = ApiCapabilitiesRouteImport.update({
+  id: '/api/capabilities',
+  path: '/api/capabilities',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiHealthRoute = ApiHealthRouteImport.update({
+  id: '/api/health',
+  path: '/api/health',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DocsSplatRoute = DocsSplatRouteImport.update({
   id: '/docs/$',
   path: '/docs/$',
@@ -56,69 +92,111 @@ const DocsSplatRoute = DocsSplatRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/$': typeof SplatRoute
+  '/about': typeof AboutRoute
   '/background-remover': typeof BackgroundRemoverRoute
+  '/contact': typeof ContactRoute
   '/privacy': typeof PrivacyRoute
   '/product-photo-background-remover': typeof ProductPhotoBackgroundRemoverRoute
   '/terms': typeof TermsRoute
   '/transparent-png': typeof TransparentPngRoute
+  '/api/$': typeof ApiSplatRoute
+  '/api/capabilities': typeof ApiCapabilitiesRoute
+  '/api/health': typeof ApiHealthRoute
   '/docs/$': typeof DocsSplatRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/$': typeof SplatRoute
+  '/about': typeof AboutRoute
   '/background-remover': typeof BackgroundRemoverRoute
+  '/contact': typeof ContactRoute
   '/privacy': typeof PrivacyRoute
   '/product-photo-background-remover': typeof ProductPhotoBackgroundRemoverRoute
   '/terms': typeof TermsRoute
   '/transparent-png': typeof TransparentPngRoute
+  '/api/$': typeof ApiSplatRoute
+  '/api/capabilities': typeof ApiCapabilitiesRoute
+  '/api/health': typeof ApiHealthRoute
   '/docs/$': typeof DocsSplatRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/$': typeof SplatRoute
+  '/about': typeof AboutRoute
   '/background-remover': typeof BackgroundRemoverRoute
+  '/contact': typeof ContactRoute
   '/privacy': typeof PrivacyRoute
   '/product-photo-background-remover': typeof ProductPhotoBackgroundRemoverRoute
   '/terms': typeof TermsRoute
   '/transparent-png': typeof TransparentPngRoute
+  '/api/$': typeof ApiSplatRoute
+  '/api/capabilities': typeof ApiCapabilitiesRoute
+  '/api/health': typeof ApiHealthRoute
   '/docs/$': typeof DocsSplatRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/$'
+    | '/about'
     | '/background-remover'
+    | '/contact'
     | '/privacy'
     | '/product-photo-background-remover'
     | '/terms'
     | '/transparent-png'
+    | '/api/$'
+    | '/api/capabilities'
+    | '/api/health'
     | '/docs/$'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/$'
+    | '/about'
     | '/background-remover'
+    | '/contact'
     | '/privacy'
     | '/product-photo-background-remover'
     | '/terms'
     | '/transparent-png'
+    | '/api/$'
+    | '/api/capabilities'
+    | '/api/health'
     | '/docs/$'
   id:
     | '__root__'
     | '/'
+    | '/$'
+    | '/about'
     | '/background-remover'
+    | '/contact'
     | '/privacy'
     | '/product-photo-background-remover'
     | '/terms'
     | '/transparent-png'
+    | '/api/$'
+    | '/api/capabilities'
+    | '/api/health'
     | '/docs/$'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  SplatRoute: typeof SplatRoute
+  AboutRoute: typeof AboutRoute
   BackgroundRemoverRoute: typeof BackgroundRemoverRoute
+  ContactRoute: typeof ContactRoute
   PrivacyRoute: typeof PrivacyRoute
   ProductPhotoBackgroundRemoverRoute: typeof ProductPhotoBackgroundRemoverRoute
   TermsRoute: typeof TermsRoute
   TransparentPngRoute: typeof TransparentPngRoute
+  ApiSplatRoute: typeof ApiSplatRoute
+  ApiCapabilitiesRoute: typeof ApiCapabilitiesRoute
+  ApiHealthRoute: typeof ApiHealthRoute
   DocsSplatRoute: typeof DocsSplatRoute
 }
 
@@ -131,11 +209,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/$': {
+      id: '/$'
+      path: '/$'
+      fullPath: '/$'
+      preLoaderRoute: typeof SplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/about': {
+      id: '/about'
+      path: '/about'
+      fullPath: '/about'
+      preLoaderRoute: typeof AboutRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/background-remover': {
       id: '/background-remover'
       path: '/background-remover'
       fullPath: '/background-remover'
       preLoaderRoute: typeof BackgroundRemoverRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/contact': {
+      id: '/contact'
+      path: '/contact'
+      fullPath: '/contact'
+      preLoaderRoute: typeof ContactRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/privacy': {
@@ -166,6 +265,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TransparentPngRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/$': {
+      id: '/api/$'
+      path: '/api/$'
+      fullPath: '/api/$'
+      preLoaderRoute: typeof ApiSplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/capabilities': {
+      id: '/api/capabilities'
+      path: '/api/capabilities'
+      fullPath: '/api/capabilities'
+      preLoaderRoute: typeof ApiCapabilitiesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/health': {
+      id: '/api/health'
+      path: '/api/health'
+      fullPath: '/api/health'
+      preLoaderRoute: typeof ApiHealthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/docs/$': {
       id: '/docs/$'
       path: '/docs/$'
@@ -178,22 +298,19 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  SplatRoute: SplatRoute,
+  AboutRoute: AboutRoute,
   BackgroundRemoverRoute: BackgroundRemoverRoute,
+  ContactRoute: ContactRoute,
   PrivacyRoute: PrivacyRoute,
   ProductPhotoBackgroundRemoverRoute: ProductPhotoBackgroundRemoverRoute,
   TermsRoute: TermsRoute,
   TransparentPngRoute: TransparentPngRoute,
+  ApiSplatRoute: ApiSplatRoute,
+  ApiCapabilitiesRoute: ApiCapabilitiesRoute,
+  ApiHealthRoute: ApiHealthRoute,
   DocsSplatRoute: DocsSplatRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { createStart } from '@tanstack/react-start'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-  }
-}

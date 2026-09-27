@@ -24,17 +24,37 @@ const GOOGLE_SITE_VERIFICATION = import.meta.env
 
 const STRUCTURED_DATA = JSON.stringify({
   '@context': 'https://schema.org',
-  '@type': 'WebApplication',
-  name: 'BG0',
-  url: SITE_URL,
-  description: DESCRIPTION,
-  applicationCategory: 'MultimediaApplication',
-  operatingSystem: 'Any',
-  offers: {
-    '@type': 'Offer',
-    price: '0',
-    priceCurrency: 'USD',
-  },
+  '@graph': [
+    {
+      '@type': 'Organization',
+      '@id': `${SITE_URL}/#organization`,
+      name: 'BG0',
+      url: SITE_URL,
+      description: DESCRIPTION,
+      contactPoint: {
+        '@type': 'ContactPoint',
+        email: 'support@bg0.dev',
+        contactType: 'customer support',
+        url: `${SITE_URL}/contact`,
+      },
+      address: {
+        '@type': 'PostalAddress',
+        addressCountry: 'US',
+        addressLocality: 'Online',
+      },
+    },
+    {
+      '@type': 'WebApplication',
+      '@id': `${SITE_URL}/#application`,
+      name: 'BG0',
+      url: SITE_URL,
+      description: DESCRIPTION,
+      applicationCategory: 'MultimediaApplication',
+      operatingSystem: 'Any',
+      publisher: { '@id': `${SITE_URL}/#organization` },
+      offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+    },
+  ],
 })
 
 const THEME_SCRIPT = `(function(){try{var saved=localStorage.getItem('blume-theme')||localStorage.getItem('bg0-theme');var theme=saved==='light'||saved==='dark'?saved:(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');var root=document.documentElement;root.classList.toggle('dark',theme==='dark');root.style.colorScheme=theme;var meta=document.querySelector('meta[name="theme-color"]');if(meta)meta.content=theme==='dark'?'#0a0a0a':'#ffffff'}catch(_){}})()`
@@ -119,8 +139,8 @@ function NotFound() {
       <h1 className="mt-3 text-3xl font-semibold tracking-tight">
         Page not found
       </h1>
-      <p className="mt-3 text-muted-foreground">
-        The page you requested does not exist.
+      <p className="mt-3 max-w-md text-muted-foreground">
+        The page you requested does not exist. Read the <a className="underline underline-offset-4" href="/docs">BG0 documentation</a> or return to the background remover.
       </p>
       <Button asChild className="mt-7">
         <Link to="/">Back to BG0</Link>

@@ -1,0 +1,21 @@
+# BG0
+
+BG0 is a free, anonymous, browser-only background remover at https://bg0.dev. It runs BiRefNet-based inference on the user's device and downloads a transparent PNG. Image pixels, masks, filenames, dimensions, thumbnails, and URLs are not uploaded.
+
+## When to use this
+
+Use BG0 when a person needs to remove a photo background privately, without an account, API key, cloud upload, or recurring cost. It is a good fit for one-off product photos, profile images, illustrations, and batch work where the user can run a browser locally. Do not use BG0 when a server-side image transformation API, shared asset library, or remote job queue is required: BG0 intentionally has no hosted inference API.
+
+## How an agent should call BG0
+
+For machine-readable discovery, call `GET https://bg0.dev/api/capabilities` and `GET https://bg0.dev/api/health`. Read the API contract at https://bg0.dev/openapi.json. To process an image, direct the person to https://bg0.dev/ and explain that they choose or drop the image in their browser; the image stays on-device.
+
+## Resources
+
+- Web app: https://bg0.dev/
+- Documentation: https://bg0.dev/docs
+- API specification: https://bg0.dev/openapi.json
+- Capabilities: https://bg0.dev/api/capabilities
+- Privacy: https://bg0.dev/privacy
+- Feedback: https://bg0.dev/feedback.md
+- Source code: https://github.com/opencoredev/bg0

@@ -1,0 +1,181 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "BG0 Public API",
+    "version": "1.0.0",
+    "description": "Read-only discovery endpoints for BG0, a browser-only background remover. Image bytes are never uploaded and there is no authentication or hosted inference API.",
+    "contact": {
+      "url": "https://github.com/opencoredev/bg0/issues"
+    }
+  },
+  "servers": [
+    {
+      "url": "https://bg0.dev"
+    }
+  ],
+  "paths": {
+    "/api/health": {
+      "get": {
+        "operationId": "getHealth",
+        "summary": "Check service availability",
+        "description": "Returns a machine-readable readiness response. Image processing remains on the user's device.",
+        "responses": {
+          "200": {
+            "description": "BG0 is available",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Structured error response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/capabilities": {
+      "get": {
+        "operationId": "getCapabilities",
+        "summary": "Describe BG0 capabilities",
+        "description": "Returns the supported processing model and privacy boundary for agents deciding whether BG0 fits a task.",
+        "responses": {
+          "200": {
+            "description": "Capability metadata",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilitiesResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Structured error response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "HealthResponse": {
+        "type": "object",
+        "required": [
+          "ok",
+          "service",
+          "mode",
+          "message"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "description": "Whether the service is ready"
+          },
+          "service": {
+            "type": "string",
+            "const": "bg0"
+          },
+          "mode": {
+            "type": "string",
+            "const": "browser-only"
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "CapabilitiesResponse": {
+        "type": "object",
+        "required": [
+          "name",
+          "description",
+          "processing",
+          "uploads",
+          "authentication",
+          "output",
+          "docs",
+          "openapi"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "processing": {
+            "type": "string",
+            "enum": [
+              "on-device"
+            ]
+          },
+          "uploads": {
+            "type": "boolean",
+            "const": false
+          },
+          "authentication": {
+            "type": "string",
+            "enum": [
+              "none"
+            ]
+          },
+          "output": {
+            "type": "string"
+          },
+          "docs": {
+            "type": "string",
+            "format": "uri"
+          },
+          "openapi": {
+            "type": "string",
+            "format": "uri"
+          }
+        }
+      },
+      "Error": {
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "type": "object",
+            "required": [
+              "code",
+              "message",
+              "resolution"
+            ],
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "resolution": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

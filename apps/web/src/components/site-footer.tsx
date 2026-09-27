@@ -5,6 +5,8 @@ const links = [
   { href: '/docs', label: 'Docs' },
   { href: '/docs/library', label: 'Library' },
   { href: GITHUB_URL, label: 'GitHub' },
+  { href: '/about', label: 'About' },
+  { href: '/contact', label: 'Contact' },
   { href: '/privacy', label: 'Privacy' },
   { href: '/terms', label: 'Terms' },
 ]

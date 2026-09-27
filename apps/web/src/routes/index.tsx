@@ -24,6 +24,11 @@ function Home() {
         <div id="remover" className="mt-6 scroll-mt-6 sm:mt-9">
           <BrowserRemover />
         </div>
+        <section className="mx-auto mt-12 max-w-3xl space-y-5 text-[15px] leading-6 text-muted-foreground">
+          <h2 className="text-xl font-semibold text-foreground">Private background removal in your browser</h2>
+          <p>BG0 removes the background from a photo on your own device and creates a transparent PNG. The model runs locally with WebGPU or WebAssembly, so your image pixels, masks, file names, dimensions, thumbnails, and image URLs stay in the browser. You can use the app without an account, upload, API key, or usage limit.</p>
+          <p>Choose an image, wait for model preparation, review the result, and download it. BG0 is designed for product photos, profile images, illustrations, and other quick edits where keeping the source private matters. Read the <a className="text-foreground underline underline-offset-4" href="/docs">documentation</a>, inspect the <a className="text-foreground underline underline-offset-4" href="/api/capabilities">capabilities</a>, or view the <a className="text-foreground underline underline-offset-4" href="/openapi.json">OpenAPI specification</a> for machine-readable details.</p>
+        </section>
         <nav
           aria-label="Background removal guides"
           className="mx-auto mt-10 flex max-w-2xl flex-wrap justify-center gap-x-5 gap-y-2 text-sm text-muted-foreground"
