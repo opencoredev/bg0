@@ -31,7 +31,7 @@ function ClientNotFound() {
     <main className="mx-auto flex min-h-[70vh] max-w-5xl flex-col items-center justify-center px-5 text-center">
       <p className="font-mono text-sm text-muted-foreground">404</p>
       <h1 className="mt-3 text-3xl font-semibold tracking-tight">Page not found</h1>
-      <p className="mt-3 max-w-md text-muted-foreground">The page you requested does not exist. Read the BG0 documentation or return to the background remover.</p>
+      <p className="mt-3 max-w-md text-muted-foreground">The page you requested does not exist. Read the <a className="underline underline-offset-4" href="/docs">BG0 documentation</a> or return to the background remover.</p>
       <Button asChild className="mt-7"><Link to="/">Back to BG0</Link></Button>
     </main>
   )
