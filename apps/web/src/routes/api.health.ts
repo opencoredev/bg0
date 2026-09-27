@@ -8,7 +8,7 @@ export const Route = createFileRoute('/api/health')({
           ok: true,
           service: 'bg0',
           mode: 'browser-only',
-          message: 'BG0 is ready. Image processing runs in the browser.',
+          message: 'BG0 web resources are available. Image processing runs in the browser.',
         }),
     },
   },

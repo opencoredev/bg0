@@ -6,7 +6,7 @@ BG0 is a browser-only background remover. Feedback should describe what you expe
 
 Open an issue in the public tracker: https://github.com/opencoredev/bg0/issues/new/choose
 
-Choose the closest issue template and include a minimal reproduction. For security problems, use the repository's security contact instead of posting sensitive details publicly.
+Choose the closest issue template and include a minimal reproduction. For security problems, use GitHub's private security reporting flow instead of posting sensitive details publicly.
 
 ## Useful checks
 
