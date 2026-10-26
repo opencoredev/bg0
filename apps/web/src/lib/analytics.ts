@@ -213,14 +213,6 @@ export function captureResultDownloaded(provider: 'wasm' | 'webgpu') {
   capture('result_downloaded', { provider })
 }
 
-export function captureCrossPromoClicked(project: 'gradients-sh') {
-  capture('cross_promo_clicked', { project, placement: 'banner' })
-}
-
-export function captureCrossPromoDismissed(project: 'gradients-sh') {
-  capture('cross_promo_dismissed', { project, placement: 'banner' })
-}
-
 export function captureFeatureUsed(feature: Feature) {
   capture('feature_used', { feature })
 }
