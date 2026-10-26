@@ -13,11 +13,13 @@ const RESULT_SURVEY_SHOWN_KEY = `bg0-survey-shown:${RESULT_SURVEY_ID}`
 
 type InputMethod = 'drop' | 'paste' | 'picker'
 type ResultView = 'compare' | 'original' | 'result'
+type ModelTier = 'auto' | 'lite' | 'full'
 type Feature =
   | 'compare_slider'
   | 'copy_result'
   | 'start_another_image'
   | `view_${ResultView}`
+  | `model_tier_${ModelTier}`
 
 let clientPromise: Promise<PostHog | null> | null = null
 let resultSurveyPending = false

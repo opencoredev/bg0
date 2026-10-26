@@ -1,4 +1,12 @@
-import { afterAll, afterEach, describe, expect, mock, test } from 'bun:test'
+import {
+  afterAll,
+  afterEach,
+  describe,
+  expect,
+  mock,
+  spyOn,
+  test,
+} from 'bun:test'
 import {
   BackgroundRemovalError,
   type BackgroundRemovalResult,
@@ -41,6 +49,8 @@ afterAll(async () => {
   }
 })
 
+const MIB = 1024 ** 2
+
 const IPHONE_SAFARI_USER_AGENT =
   'Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 Version/27.0 Mobile/15E148 Safari/604.1'
 
@@ -56,6 +66,20 @@ describe('iOS export notice', () => {
 
     warmBackgroundRemovalModel(MAC_SAFARI_USER_AGENT, prepare)
     expect(prepare).toHaveBeenCalledTimes(1)
+  })
+
+  test('a newer warm-up replaces the last one and passes the tier', () => {
+    const prepare = mock(
+      (_options?: { model?: string; signal?: AbortSignal }) =>
+        Promise.resolve('wasm' as const),
+    )
+    warmBackgroundRemovalModel(MAC_SAFARI_USER_AGENT, prepare, 0, 'auto')
+    warmBackgroundRemovalModel(MAC_SAFARI_USER_AGENT, prepare, 0, 'lite')
+    const [first, second] = prepare.mock.calls.map(([options]) => options)
+    expect(first?.model).toBe('auto')
+    expect(first?.signal?.aborted).toBe(true)
+    expect(second?.model).toBe('lite')
+    expect(second?.signal?.aborted).toBe(false)
   })
 
   test('warms Android normally but not desktop-mode iPad', () => {
@@ -87,6 +111,17 @@ describe('iOS export notice', () => {
       })
       warmBackgroundRemovalModel(MAC_SAFARI_USER_AGENT, prepare)
       expect(prepare).not.toHaveBeenCalled()
+
+      // Choosing lite on a slow connection only records the tier.
+      const record = mock(
+        (_options?: { model?: string; signal?: AbortSignal }) =>
+          Promise.resolve('wasm' as const),
+      )
+      warmBackgroundRemovalModel(MAC_SAFARI_USER_AGENT, record, 0, 'lite')
+      expect(record.mock.calls[0][0]?.model).toBe('lite')
+      expect(record.mock.calls[0][0]?.signal?.aborted).toBe(true)
+      warmBackgroundRemovalModel(MAC_SAFARI_USER_AGENT, record, 0, 'full')
+      expect(record).toHaveBeenCalledTimes(1)
 
       Object.defineProperty(navigator, 'connection', {
         configurable: true,
@@ -1119,11 +1154,11 @@ describe('Remover loading status', () => {
           progress: 0.3,
           message: 'Downloading local model…',
           provider: 'wasm',
-          download: { loadedBytes: 40_000_000, totalBytes: 98_000_000 },
+          download: { loadedBytes: 40 * MIB, totalBytes: 94 * MIB },
         }),
       )
       expect(
-        view.getAllByText('Downloading model · 40 of 98 MB').length,
+        view.getAllByText('Downloading model · 40 of 94 MiB').length,
       ).toBeGreaterThan(0)
       expect(
         view.getByText(
@@ -1132,7 +1167,7 @@ describe('Remover loading status', () => {
       ).toBeTruthy()
       const live = view.container.querySelector('[aria-live="polite"]')
       expect(live?.textContent).toBe(
-        'Downloading the model (98 MB). BG0 tries to keep it so later runs are faster.',
+        'Downloading the model (94 MiB). BG0 tries to keep it so later runs are faster.',
       )
 
       act(() =>
@@ -1141,11 +1176,11 @@ describe('Remover loading status', () => {
           progress: 0.5,
           message: 'Downloading local model…',
           provider: 'wasm',
-          download: { loadedBytes: 70_000_000, totalBytes: 98_000_000 },
+          download: { loadedBytes: 70 * MIB, totalBytes: 94 * MIB },
         }),
       )
       expect(
-        view.getAllByText('Downloading model · 70 of 98 MB').length,
+        view.getAllByText('Downloading model · 70 of 94 MiB').length,
       ).toBeGreaterThan(0)
 
       act(() =>
@@ -1172,6 +1207,252 @@ describe('Remover loading status', () => {
       )
       expect(view.queryByText(/without GPU acceleration/)).toBeNull()
     } finally {
+      view.unmount()
+      urls.restore()
+    }
+  })
+})
+
+describe('Remover model tier', () => {
+  const STORAGE_KEY = 'bg0:model-tier'
+  const pageUrl = window.location.href
+  const setUrl = (url: string) =>
+    (
+      window as unknown as { happyDOM: { setURL: (url: string) => void } }
+    ).happyDOM.setURL(url)
+
+  afterEach(() => {
+    localStorage.removeItem(STORAGE_KEY)
+    setUrl(pageUrl)
+    Reflect.deleteProperty(navigator, 'connection')
+  })
+
+  function pasteImage() {
+    const transfer = new DataTransfer()
+    transfer.items.add(new File(['image'], 'a.png', { type: 'image/png' }))
+    fireEvent.paste(window, { clipboardData: transfer })
+  }
+
+  test('shows each tier with its download size, saves the choice and re-warms', () => {
+    const warm = mock((_model: string) => undefined)
+    const view = render(<Remover warmImpl={warm} />)
+    const group = view.getByRole('radiogroup', { name: 'Model' })
+    expect(group.textContent).toContain('Auto')
+    expect(group.textContent).toContain('Lite94 MiB')
+    expect(group.textContent).toContain('Full452 MiB')
+    expect(view.getByRole('radio', { name: 'Auto' })).toHaveProperty(
+      'checked',
+      true,
+    )
+
+    fireEvent.click(view.getByRole('radio', { name: /Lite/ }))
+    expect(view.getByRole('radio', { name: /Lite/ })).toHaveProperty(
+      'checked',
+      true,
+    )
+    expect(localStorage.getItem(STORAGE_KEY)).toBe('lite')
+    expect(warm.mock.calls).toEqual([['lite']])
+    expect(view.getByText('Smaller download, less fine detail.')).toBeTruthy()
+    // A URL without the parameter is left alone.
+    expect(window.location.search).toBe('')
+    view.unmount()
+
+    // The saved choice survives a reload.
+    const again = render(<Remover warmImpl={warm} />)
+    expect(again.getByRole('radio', { name: /Lite/ })).toHaveProperty(
+      'checked',
+      true,
+    )
+  })
+
+  test('a ?model= link pins the tier and stays in step with the picker', async () => {
+    localStorage.setItem(STORAGE_KEY, 'full')
+    setUrl('https://bg0.dev/?model=lite')
+    const remove = mock(
+      (_input: Blob, _options?: RemoveBackgroundOptions) =>
+        new Promise<BackgroundRemovalResult>(() => undefined),
+    )
+    const view = render(
+      <Remover
+        removeBackgroundImpl={remove}
+        waitForPaintImpl={() => Promise.resolve()}
+        warmImpl={() => undefined}
+      />,
+    )
+    expect(view.getByRole('radio', { name: /Lite/ })).toHaveProperty(
+      'checked',
+      true,
+    )
+    pasteImage()
+    await waitFor(() => expect(remove).toHaveBeenCalledTimes(1))
+    expect(remove.mock.calls[0][1]?.model).toBe('lite')
+
+    fireEvent.click(view.getByRole('radio', { name: /Full/ }))
+    expect(window.location.search).toBe('?model=full')
+    expect(localStorage.getItem(STORAGE_KEY)).toBe('full')
+    view.unmount()
+  })
+
+  test('offers Lite while the full model downloads and restarts the image with it', async () => {
+    const urls = trackObjectUrls()
+    const reports: NonNullable<RemoveBackgroundOptions['onProgress']>[] = []
+    const remove = mock((_input: Blob, options?: RemoveBackgroundOptions) => {
+      if (options?.onProgress) reports.push(options.onProgress)
+      return new Promise<BackgroundRemovalResult>(() => undefined)
+    })
+    const warm = mock((_model: string) => undefined)
+    const view = render(
+      <Remover
+        removeBackgroundImpl={remove}
+        waitForPaintImpl={() => Promise.resolve()}
+        warmImpl={warm}
+      />,
+    )
+    try {
+      pasteImage()
+      await waitFor(() => expect(remove).toHaveBeenCalledTimes(1))
+      expect(remove.mock.calls[0][1]?.model).toBe('auto')
+
+      act(() =>
+        reports[0]({
+          stage: 'downloading',
+          progress: 0.1,
+          message: 'Downloading local model…',
+          provider: 'webgpu',
+          model: 'birefnet-lite',
+          download: { loadedBytes: 10 * MIB, totalBytes: 94 * MIB },
+        }),
+      )
+      // Lite is already downloading: nothing to switch to.
+      expect(view.queryByTestId('switch-to-lite')).toBeNull()
+
+      act(() =>
+        reports[0]({
+          stage: 'downloading',
+          progress: 0.1,
+          message: 'Downloading local model…',
+          provider: 'webgpu',
+          model: 'birefnet',
+          download: { loadedBytes: 10 * MIB, totalBytes: 452 * MIB },
+        }),
+      )
+      const action = view.getByTestId('switch-to-lite')
+      expect(action.textContent).toBe('Switch to Lite94 MiB')
+      expect(
+        view.getByText(
+          'Usually a one-time download, so later runs are faster.',
+        ),
+      ).toBeTruthy()
+
+      const firstSignal = remove.mock.calls[0][1]?.signal
+      fireEvent.click(action)
+      await waitFor(() => expect(remove).toHaveBeenCalledTimes(2))
+      expect(firstSignal?.aborted).toBe(true)
+      expect(remove.mock.calls[1][1]?.model).toBe('lite')
+      expect(localStorage.getItem(STORAGE_KEY)).toBe('lite')
+      expect(view.getByRole('radio', { name: /Lite/ })).toHaveProperty(
+        'checked',
+        true,
+      )
+      // The page-load warm-up is replaced, so it stops holding the full load.
+      expect(warm.mock.calls).toEqual([['lite']])
+      const live = view.container.querySelector('[aria-live="polite"]')
+      expect(live?.textContent).toBe(
+        'Switched to Lite (94 MiB). Starting this image again.',
+      )
+    } finally {
+      view.unmount()
+      urls.restore()
+    }
+  })
+
+  test('a slow connection explains the wait and offers Lite even when Full is pinned', async () => {
+    const urls = trackObjectUrls()
+    Object.defineProperty(navigator, 'connection', {
+      configurable: true,
+      value: { effectiveType: '3g' },
+    })
+    let report: RemoveBackgroundOptions['onProgress']
+    const remove = mock((_input: Blob, options?: RemoveBackgroundOptions) => {
+      report = options?.onProgress
+      return new Promise<BackgroundRemovalResult>(() => undefined)
+    })
+    const view = render(
+      <Remover
+        removeBackgroundImpl={remove}
+        waitForPaintImpl={() => Promise.resolve()}
+        warmImpl={() => undefined}
+      />,
+    )
+    try {
+      expect(
+        view.getByText(
+          'Slow connection? Lite downloads 94 MiB instead of 452 MiB.',
+        ),
+      ).toBeTruthy()
+      fireEvent.click(view.getByRole('radio', { name: /Full/ }))
+      expect(view.queryByText(/^Slow connection\?/)).toBeNull()
+
+      pasteImage()
+      await waitFor(() => expect(remove).toHaveBeenCalledTimes(1))
+      act(() =>
+        report?.({
+          stage: 'downloading',
+          progress: 0.1,
+          message: 'Downloading local model…',
+          provider: 'webgpu',
+          model: 'birefnet',
+          download: { loadedBytes: 10 * MIB, totalBytes: 452 * MIB },
+        }),
+      )
+      expect(view.getByText('This download looks slow.')).toBeTruthy()
+      expect(view.getByTestId('switch-to-lite')).toBeTruthy()
+    } finally {
+      view.unmount()
+      urls.restore()
+    }
+  })
+
+  test('a pinned Full download offers Lite once the measured speed is slow', async () => {
+    const urls = trackObjectUrls()
+    localStorage.setItem(STORAGE_KEY, 'full')
+    const now = spyOn(performance, 'now')
+    let report: RemoveBackgroundOptions['onProgress']
+    const remove = mock((_input: Blob, options?: RemoveBackgroundOptions) => {
+      report = options?.onProgress
+      return new Promise<BackgroundRemovalResult>(() => undefined)
+    })
+    const view = render(
+      <Remover
+        removeBackgroundImpl={remove}
+        waitForPaintImpl={() => Promise.resolve()}
+        warmImpl={() => undefined}
+      />,
+    )
+    const download = (at: number, loaded: number) => {
+      now.mockReturnValue(at)
+      act(() =>
+        report?.({
+          stage: 'downloading',
+          progress: 0.1,
+          message: 'Downloading local model…',
+          provider: 'webgpu',
+          model: 'birefnet',
+          download: { loadedBytes: loaded * MIB, totalBytes: 452 * MIB },
+        }),
+      )
+    }
+    try {
+      pasteImage()
+      await waitFor(() => expect(remove).toHaveBeenCalledTimes(1))
+      download(1_000, 1)
+      expect(view.queryByTestId('switch-to-lite')).toBeNull()
+      // 1 MiB/s: about seven minutes still to go.
+      download(5_000, 5)
+      expect(view.getByTestId('switch-to-lite')).toBeTruthy()
+      expect(view.getByText(/This download looks slow/)).toBeTruthy()
+    } finally {
+      now.mockRestore()
       view.unmount()
       urls.restore()
     }

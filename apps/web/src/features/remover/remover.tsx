@@ -4,6 +4,7 @@ import {
   type BackgroundRemovalResult,
   IMAGE_ACCEPT_ATTRIBUTE,
   isIosBrowser,
+  type ModelTier,
   prepareBackgroundRemoval,
   type RemovalProgress,
   removeBackground,
@@ -49,6 +50,18 @@ import {
   startRunMarker,
   takeInterruptedRun,
 } from './interrupted-run'
+import {
+  FULL_DOWNLOAD_LABEL,
+  isSlowConnection,
+  isSlowDownload,
+  LITE_DOWNLOAD_LABEL,
+  type NetworkHint,
+  readModelTier,
+  saveModelTier,
+  toMebibytes,
+  urlWithModelTier,
+} from './model-tier'
+import { ModelTierPicker } from './model-tier-picker'
 
 type State =
   | { status: 'idle' }
@@ -75,30 +88,67 @@ type WaitForPaint = () => Promise<void>
 interface RemoverProps {
   removeBackgroundImpl?: RemoveBackground
   waitForPaintImpl?: WaitForPaint
+  /** Prepares the model for the next image after the tier changes. */
+  warmImpl?: (model: ModelTier) => void
   stallTimeoutMs?: number
 }
 
+function browserStorage(): Storage | undefined {
+  try {
+    return window.localStorage
+  } catch {
+    return undefined
+  }
+}
+
+function networkHint(): NetworkHint | undefined {
+  return (navigator as Navigator & { connection?: NetworkHint }).connection
+}
+
+function savedModelTier(): ModelTier {
+  return readModelTier({
+    search: window.location.search,
+    storage: browserStorage(),
+  })
+}
+
+let warming: AbortController | undefined
+
+/** Prepares the model in the background. A newer call replaces the last one. */
 export function warmBackgroundRemovalModel(
   userAgent = navigator.userAgent,
   prepare = prepareBackgroundRemoval,
   maxTouchPoints = navigator.maxTouchPoints,
+  model: ModelTier = savedModelTier(),
 ): void {
   if (isIosBrowser(userAgent, maxTouchPoints)) return
-  const connection = (
-    navigator as Navigator & {
-      connection?: { saveData?: boolean; effectiveType?: string }
-    }
-  ).connection
+  // Stop waiting on the previous tier, so its download can be stopped.
+  warming?.abort()
+  warming = undefined
+  const connection = networkHint()
   if (
     connection?.saveData ||
     connection?.effectiveType === '2g' ||
     connection?.effectiveType === 'slow-2g'
   ) {
+    // Download nothing, but still tell the library about a lite choice: it
+    // stops a full download an earlier warm-up left running.
+    if (model === 'lite') {
+      void prepare({ model, signal: AbortSignal.abort() }).catch(() => {
+        // Rejects as cancelled by design.
+      })
+    }
     return
   }
-  void prepare().catch(() => {
+  const controller = new AbortController()
+  warming = controller
+  void prepare({ model, signal: controller.signal }).catch(() => {
     // The normal processing path retries and presents a useful error if needed.
   })
+}
+
+function warmModel(model: ModelTier) {
+  warmBackgroundRemovalModel(undefined, undefined, undefined, model)
 }
 
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
@@ -192,6 +242,7 @@ function clipboardImagesSupported() {
 export function Remover({
   removeBackgroundImpl = removeBackground,
   waitForPaintImpl = waitForNextPaint,
+  warmImpl = warmModel,
   stallTimeoutMs = RUN_STALL_MS,
 }: RemoverProps = {}) {
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -226,6 +277,15 @@ export function Remover({
     resultSavedRef.current = saved
     setResultSavedState(saved)
   }, [])
+  // iPhone and iPad always run their own lower-memory model.
+  const [showTierPicker] = useState(
+    () => !isIosBrowser(navigator.userAgent, navigator.maxTouchPoints),
+  )
+  const [tier, setTier] = useState<ModelTier>(savedModelTier)
+  const tierRef = useRef(tier)
+  const [slowNetwork] = useState(() => isSlowConnection(networkHint()))
+  // Whether the current run's full-model download is moving slowly.
+  const [slowDownload, setSlowDownload] = useState(false)
 
   useEffect(() => {
     setShowIosExportNotice(
@@ -296,6 +356,7 @@ export function Remover({
       abortController.current = controller
       setView('compare')
       setInterrupted(false)
+      setSlowDownload(false)
       if (replacingUnsaved) notify('Previous result replaced before download')
       setAnnouncement(
         replacing
@@ -337,8 +398,10 @@ export function Remover({
         }
 
         let announcedDownload = false
+        let downloadSample: { at: number; bytes: number } | undefined
         const result = await removeBackgroundImpl(file, {
           quality: 'quality',
+          model: tierRef.current,
           signal: controller.signal,
           onProgress: (progress) => {
             if (
@@ -353,6 +416,24 @@ export function Remover({
             if (progress.stage === 'downloading' && !announcedDownload) {
               announcedDownload = true
               setAnnouncement(downloadAnnouncement(progress))
+            }
+            if (
+              progress.stage === 'downloading' &&
+              progress.model === 'birefnet' &&
+              progress.download
+            ) {
+              const { loadedBytes, totalBytes } = progress.download
+              const now = performance.now()
+              downloadSample ??= { at: now, bytes: loadedBytes }
+              if (
+                isSlowDownload({
+                  elapsedMs: now - downloadSample.at,
+                  receivedBytes: loadedBytes - downloadSample.bytes,
+                  remainingBytes: totalBytes - loadedBytes,
+                })
+              ) {
+                setSlowDownload(true)
+              }
             }
             setState((current) => {
               if (current.status !== 'processing') return current
@@ -707,6 +788,30 @@ export function Remover({
       void process(lastFile.current.file, lastFile.current.inputMethod, false)
   }, [process])
 
+  const changeTier = useCallback(
+    (next: ModelTier) => {
+      if (next === tierRef.current) return
+      tierRef.current = next
+      setTier(next)
+      saveModelTier(next, browserStorage())
+      const href = urlWithModelTier(window.location.href, next)
+      if (href !== window.location.href) {
+        window.history.replaceState(window.history.state, '', href)
+      }
+      captureFeatureUsed(`model_tier_${next}`)
+      // Replace the page-load warm-up too. While it still waits on the full
+      // model, the SDK cannot stop that download.
+      warmImpl(next)
+      const running = lastFile.current
+      if (latestState.current.status === 'processing' && running) {
+        // Restart the current image so a slow download is not waited out.
+        void process(running.file, running.inputMethod, false)
+        notify(`Switched to ${tierName(next)}. Starting this image again.`)
+      }
+    },
+    [notify, process, warmImpl],
+  )
+
   return (
     <section
       aria-label="Background remover"
@@ -848,11 +953,39 @@ export function Remover({
                   {progressLabel(state.progress)}
                 </span>
               </span>
-              {progressNote(state.progress, mobile) && (
-                <span className="max-w-[90%] rounded-full bg-background/85 px-3 py-1 text-center text-[11px] text-muted-foreground backdrop-blur-sm">
-                  {progressNote(state.progress, mobile)}
-                </span>
-              )}
+              {(() => {
+                const fullDownload =
+                  state.progress.stage === 'downloading' &&
+                  state.progress.model === 'birefnet'
+                const slow = fullDownload && (slowNetwork || slowDownload)
+                // The Switch to Lite button carries the size.
+                const note = slow
+                  ? 'This download looks slow.'
+                  : progressNote(state.progress, mobile)
+                return (
+                  <>
+                    {note && (
+                      <span className="max-w-[90%] rounded-full bg-background/85 px-3 py-1 text-center text-[11px] text-muted-foreground backdrop-blur-sm">
+                        {note}
+                      </span>
+                    )}
+                    {fullDownload && (tier === 'auto' || slow) && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => changeTier('lite')}
+                        data-testid="switch-to-lite"
+                      >
+                        Switch to Lite
+                        <span className="font-mono text-[11px] tabular-nums opacity-70">
+                          {LITE_DOWNLOAD_LABEL}
+                        </span>
+                      </Button>
+                    )}
+                  </>
+                )
+              })()}
             </div>
           </div>
         )}
@@ -876,6 +1009,7 @@ export function Remover({
               </Tabs>
               <span className="hidden items-center gap-2 font-mono text-[11px] tracking-wide text-muted-foreground sm:inline-flex">
                 <span className="size-1.5 rounded-full bg-success" />
+                {state.result.model === 'birefnet' ? 'FULL' : 'LITE'} ·{' '}
                 {state.result.provider === 'webgpu' ? 'WEBGPU' : 'WASM'} ·{' '}
                 {(state.result.durationMs / 1000).toFixed(1)}s ·{' '}
                 {state.result.width}×{state.result.height}
@@ -1020,6 +1154,18 @@ export function Remover({
         )}
       </div>
 
+      {showTierPicker && (
+        <div className="mt-4 flex flex-col items-center gap-1.5">
+          <ModelTierPicker value={tier} onChange={changeTier} />
+          {slowNetwork && tier === 'auto' && (
+            <p className="text-center text-xs text-muted-foreground">
+              Slow connection? Lite downloads {LITE_DOWNLOAD_LABEL} instead of{' '}
+              {FULL_DOWNLOAD_LABEL}.
+            </p>
+          )}
+        </div>
+      )}
+
       <input
         ref={photoInputRef}
         type="file"
@@ -1074,7 +1220,7 @@ export function Remover({
 function progressLabel(progress: RemovalProgress) {
   if (progress.stage === 'downloading' && progress.download) {
     const { loadedBytes, totalBytes } = progress.download
-    return `Downloading model · ${toMegabytes(loadedBytes)} of ${toMegabytes(totalBytes)} MB`
+    return `Downloading model · ${toMebibytes(loadedBytes)} of ${toMebibytes(totalBytes)} MiB`
   }
   return progress.message
 }
@@ -1093,13 +1239,15 @@ function progressNote(progress: RemovalProgress, ios: boolean) {
 
 function downloadAnnouncement(progress: RemovalProgress) {
   const size = progress.download
-    ? ` (${toMegabytes(progress.download.totalBytes)} MB)`
+    ? ` (${toMebibytes(progress.download.totalBytes)} MiB)`
     : ''
   return `Downloading the model${size}. BG0 tries to keep it so later runs are faster.`
 }
 
-function toMegabytes(bytes: number) {
-  return Math.round(bytes / 1_000_000)
+function tierName(tier: ModelTier) {
+  if (tier === 'lite') return `Lite (${LITE_DOWNLOAD_LABEL})`
+  if (tier === 'full') return `Full (${FULL_DOWNLOAD_LABEL})`
+  return 'Auto'
 }
 
 function isRetryableError(code: BackgroundRemovalErrorCode): boolean {
