@@ -446,12 +446,20 @@ export async function removeBackground(
           stage: 'processing',
           progress: 0.84,
           message: 'Refining fine details…',
+          provider: engine.provider,
+          model: engine.definition.name,
         })
       },
       infer: (croppedSource) => inferMask(engine, croppedSource),
     })
 
-    notify({ stage: 'finishing', progress: 0.92, message: 'Finishing edges…' })
+    notify({
+      stage: 'finishing',
+      progress: 0.92,
+      message: 'Finishing edges…',
+      provider: engine.provider,
+      model: engine.definition.name,
+    })
     const image = await decodeImage(source, sourceFormat)
     decodedImage = image
     throwIfCancelled(options.signal)
@@ -464,7 +472,13 @@ export async function removeBackground(
       refinement,
     )
     throwIfCancelled(options.signal)
-    notify({ stage: 'finishing', progress: 1, message: 'Background removed' })
+    notify({
+      stage: 'finishing',
+      progress: 1,
+      message: 'Background removed',
+      provider: engine.provider,
+      model: engine.definition.name,
+    })
 
     return {
       blob,
@@ -578,21 +592,25 @@ function requestTier(tier: ModelTier = 'auto'): ModelTier {
 }
 
 /**
- * Stop a full-model download once lite is wanted and no caller waits on it.
- * Session creation is left to finish: it cannot be interrupted, and stopping
- * it would not save any bandwidth.
+ * Once lite is wanted, stop a full-model download no caller waits on, and
+ * release a loaded full session no caller holds. Session creation is left to
+ * finish: it cannot be interrupted, so the session is released once it ends.
  */
 function stopIfUnwanted(key: string, load: EngineLoad): void {
   if (
     latestTier !== 'lite' ||
     load.definition.name !== 'birefnet' ||
     load.users > 0 ||
-    load.settled ||
-    load.progress?.initializing
+    (!load.settled && load.progress?.initializing)
   ) {
     return
   }
   if (engineLoads.get(key) === load) engineLoads.delete(key)
+  if (load.settled) {
+    // A loaded full session would otherwise stay in memory beside lite.
+    void retireEngine(load)
+    return
+  }
   load.stop.abort(
     new BackgroundRemovalError(
       'cancelled',
@@ -757,6 +775,9 @@ async function getEngine(
     engineLoads.set(key, load)
     const settle = () => {
       currentLoad.settled = true
+      // A full session that finished starting after lite was chosen, with
+      // nobody waiting on it, is released instead of kept.
+      stopIfUnwanted(key, currentLoad)
     }
     promise.then(settle, settle)
     // A failed load must not be reused, even when every caller cancelled

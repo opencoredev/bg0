@@ -535,10 +535,15 @@ test('a hung PNG encode is abandoned on abort so a retry runs', async () => {
   expect(disposed).toBe(2)
 })
 
-test('iOS progress reports the WASM provider', async () => {
+test('iOS progress reports the WASM provider and the lite model', async () => {
   const providers = new Set<string | undefined>()
+  const models = new Set<string | undefined>()
   await removeBackground(png, {
-    onProgress: ({ provider }) => providers.add(provider),
+    onProgress: ({ provider, model }) => {
+      providers.add(provider)
+      models.add(model)
+    },
   })
   expect([...providers]).toEqual(['wasm'])
+  expect([...models]).toEqual(['birefnet-lite'])
 })

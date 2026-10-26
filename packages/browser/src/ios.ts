@@ -140,7 +140,13 @@ export function removeIosBackground(
       message: string,
     ) => {
       progress = Math.max(progress, value)
-      options.onProgress?.({ stage, progress, message, provider: 'wasm' })
+      options.onProgress?.({
+        stage,
+        progress,
+        message,
+        provider: 'wasm',
+        model: 'birefnet-lite',
+      })
     }
     const abort = () => {
       worker?.dispose(

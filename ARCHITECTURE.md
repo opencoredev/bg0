@@ -110,7 +110,8 @@ starts. `lite` drops the full model from the list; `full` puts it first even
 where detection declined it, on WebGPU when detection found a usable fp16 GPU,
 and keeps lite as the fallback. Session failures and the full-model block still
 apply. When the latest call asks for lite, a full-model download no call waits
-on is aborted rather than finishing in the background. The web app saves the
+on is aborted rather than finishing in the background, and a loaded full
+session no call holds is released. The web app saves the
 choice in localStorage under `bg0:model-tier`, accepts `?model=` for one visit,
 and offers Lite while the full model downloads.
 

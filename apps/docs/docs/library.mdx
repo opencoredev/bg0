@@ -82,7 +82,8 @@ engine is chosen. iPhone and iPad ignore the option and keep their own model.
 When a call asks for `lite`, a full-model download that no call is waiting on
 stops, so it does not compete with the lite download. A full download that a
 pending call still waits on continues until that call finishes or is
-cancelled. Session creation is never interrupted.
+cancelled. Session creation is never interrupted. A loaded full session that
+no call holds is released, so the page does not keep both models in memory.
 
 ### iPhone and iPad
 

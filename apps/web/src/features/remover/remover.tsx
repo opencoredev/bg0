@@ -371,6 +371,7 @@ export function Remover({
       const marker = startRunMarker()
       runMarker.current = marker
       // A run that stops reporting progress would otherwise spin forever.
+      let speedTimer: number | undefined
       const stall = createStallGuard(() => {
         if (abortController.current !== controller || !mounted.current) return
         marker.clear()
@@ -398,7 +399,27 @@ export function Remover({
         }
 
         let announcedDownload = false
-        let downloadSample: { at: number; bytes: number } | undefined
+        // The full model's download so far: when and at which byte it was
+        // first seen, and the latest figures.
+        let fullDownload:
+          | { at: number; bytes: number; loaded: number; total: number }
+          | undefined
+        const checkDownloadSpeed = () => {
+          if (
+            abortController.current === controller &&
+            !controller.signal.aborted &&
+            fullDownload &&
+            isSlowDownload({
+              elapsedMs: performance.now() - fullDownload.at,
+              receivedBytes: fullDownload.loaded - fullDownload.bytes,
+              remainingBytes: fullDownload.total - fullDownload.loaded,
+            })
+          ) {
+            setSlowDownload(true)
+          }
+        }
+        // A paused download sends no progress, so re-check between events.
+        speedTimer = window.setInterval(checkDownloadSpeed, 1_000)
         const result = await removeBackgroundImpl(file, {
           quality: 'quality',
           model: tierRef.current,
@@ -423,17 +444,15 @@ export function Remover({
               progress.download
             ) {
               const { loadedBytes, totalBytes } = progress.download
-              const now = performance.now()
-              downloadSample ??= { at: now, bytes: loadedBytes }
-              if (
-                isSlowDownload({
-                  elapsedMs: now - downloadSample.at,
-                  receivedBytes: loadedBytes - downloadSample.bytes,
-                  remainingBytes: totalBytes - loadedBytes,
-                })
-              ) {
-                setSlowDownload(true)
+              fullDownload = {
+                at: fullDownload?.at ?? performance.now(),
+                bytes: fullDownload?.bytes ?? loadedBytes,
+                loaded: loadedBytes,
+                total: totalBytes,
               }
+              checkDownloadSpeed()
+            } else if (progress.stage !== 'downloading') {
+              fullDownload = undefined
             }
             setState((current) => {
               if (current.status !== 'processing') return current
@@ -513,6 +532,7 @@ export function Remover({
         }
       } finally {
         stall.stop()
+        window.clearInterval(speedTimer)
         marker.clear()
         if (runMarker.current === marker) runMarker.current = null
       }

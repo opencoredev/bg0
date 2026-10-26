@@ -1413,6 +1413,52 @@ describe('Remover model tier', () => {
     }
   })
 
+  test('a pinned Full download that pauses still gets the slow hint', async () => {
+    const urls = trackObjectUrls()
+    localStorage.setItem(STORAGE_KEY, 'full')
+    const now = spyOn(performance, 'now')
+    let report: RemoveBackgroundOptions['onProgress']
+    const remove = mock((_input: Blob, options?: RemoveBackgroundOptions) => {
+      report = options?.onProgress
+      return new Promise<BackgroundRemovalResult>(() => undefined)
+    })
+    const view = render(
+      <Remover
+        removeBackgroundImpl={remove}
+        waitForPaintImpl={() => Promise.resolve()}
+        warmImpl={() => undefined}
+      />,
+    )
+    try {
+      pasteImage()
+      await waitFor(() => expect(remove).toHaveBeenCalledTimes(1))
+      now.mockReturnValue(1_000)
+      act(() =>
+        report?.({
+          stage: 'downloading',
+          progress: 0.1,
+          message: 'Downloading local model…',
+          provider: 'webgpu',
+          model: 'birefnet',
+          download: { loadedBytes: 1 * MIB, totalBytes: 452 * MIB },
+        }),
+      )
+      expect(view.queryByTestId('switch-to-lite')).toBeNull()
+      // No further progress arrives: the download has paused.
+      now.mockReturnValue(5_000)
+      await waitFor(
+        () => expect(view.getByTestId('switch-to-lite')).toBeTruthy(),
+        {
+          timeout: 2_500,
+        },
+      )
+    } finally {
+      now.mockRestore()
+      view.unmount()
+      urls.restore()
+    }
+  })
+
   test('a pinned Full download offers Lite once the measured speed is slow', async () => {
     const urls = trackObjectUrls()
     localStorage.setItem(STORAGE_KEY, 'full')

@@ -1505,9 +1505,16 @@ describe('model load recovery', () => {
       expect(
         events.find((event) => event.stage === 'downloading'),
       ).toMatchObject({ model: 'birefnet-lite', provider: 'webgpu' })
-      expect(
-        events.find((event) => event.stage === 'processing'),
-      ).toMatchObject({ model: 'birefnet-lite' })
+      // Every event after the engine is chosen names it, through finishing.
+      const chosen = events.slice(
+        events.findIndex((event) => event.model !== undefined),
+      )
+      expect(chosen.map((event) => event.message)).toContain(
+        'Background removed',
+      )
+      expect(chosen.every((event) => event.model === 'birefnet-lite')).toBe(
+        true,
+      )
     })
 
     test('full runs the full model on a device detection would keep on lite', async () => {
@@ -1600,6 +1607,62 @@ describe('model load recovery', () => {
       // The stop settles a few microtasks later, once the load's race rejects.
       await until(() => signals[0].aborted)
       expect(load.mock.calls.map((call) => call[0])).toEqual([FULL_MODEL.id])
+    })
+
+    test('choosing lite releases a loaded full session nobody holds', async () => {
+      const full = model('logits')
+      const load = spyOn(AutoModel, 'from_pretrained').mockImplementation(
+        async (id) => (id === FULL_MODEL.id ? full : model('logits')) as never,
+      )
+      expect(await removeBackground(png)).toMatchObject({ model: 'birefnet' })
+      expect(full.dispose).not.toHaveBeenCalled()
+
+      expect(await removeBackground(png, { model: 'lite' })).toMatchObject({
+        model: 'birefnet-lite',
+      })
+      expect(full.dispose).toHaveBeenCalledTimes(1)
+
+      // Auto loads the full model again rather than reusing the released one.
+      expect(await removeBackground(png)).toMatchObject({ model: 'birefnet' })
+      expect(load.mock.calls.map((call) => call[0])).toEqual([
+        FULL_MODEL.id,
+        LITE_MODEL.id,
+        FULL_MODEL.id,
+      ])
+    })
+
+    test('a full session that finishes starting after lite was chosen is released', async () => {
+      let finishFull: (value: never) => void = () => undefined
+      const full = model('logits')
+      spyOn(AutoModel, 'from_pretrained').mockImplementation(((
+        id: string,
+        options?: { progress_callback?: (event: unknown) => void },
+      ) => {
+        if (id !== FULL_MODEL.id) return Promise.resolve(model('logits'))
+        // The weights are in: the session is starting and cannot be stopped.
+        options?.progress_callback?.({
+          status: 'done',
+          name: id,
+          file: 'onnx/model_fp16.onnx',
+        })
+        return new Promise((resolve) => {
+          finishFull = resolve
+        })
+      }) as never)
+      const warm = new AbortController()
+      const warming = prepareBackgroundRemoval({ signal: warm.signal })
+      await until(
+        () =>
+          (AutoModel.from_pretrained as ReturnType<typeof spyOn>).mock.calls
+            .length === 1,
+      )
+      warm.abort()
+      await expect(warming).rejects.toMatchObject({ code: 'cancelled' })
+      expect(await removeBackground(png, { model: 'lite' })).toMatchObject({
+        model: 'birefnet-lite',
+      })
+      finishFull(full as never)
+      await until(() => full.dispose.mock.calls.length === 1)
     })
 
     test('a full download a caller still waits on continues until that caller leaves', async () => {
