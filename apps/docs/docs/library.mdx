@@ -55,6 +55,35 @@ are skipped for the current page session.
 `prepareBackgroundRemoval()` uses the same selection and shares initialization
 with removal calls. The `quality` option controls mask refinement separately.
 
+### Choose the model yourself
+
+Pass `model` to pin which weights download, regardless of what the hardware
+hints suggest. `MODEL_TIER_BYTES` holds each tier's download size for your UI.
+
+```ts
+import { MODEL_TIER_BYTES, removeBackground } from '@bg0/browser'
+
+// 94 MiB instead of 452 MiB, for example on a slow connection.
+const result = await removeBackground(file, { model: 'lite' })
+console.log(MODEL_TIER_BYTES.lite) // 98484532
+```
+
+| `model` | Behavior |
+| --- | --- |
+| `'auto'` | Default. Hardware-based selection as described above |
+| `'lite'` | Only lite BiRefNet, on WebGPU when the GPU qualifies, otherwise WASM |
+| `'full'` | Full BiRefNet first, even where selection would pick lite. Uses WebGPU when the GPU supports fp16 shaders, otherwise WASM. Lite remains the fallback |
+
+A pinned tier does not override failures already seen in the page session or
+the week-long block after a tab died running the full model. `result.model`
+reports what actually ran, and `onProgress` events carry `model` once an
+engine is chosen. iPhone and iPad ignore the option and keep their own model.
+
+When a call asks for `lite`, a full-model download that no call is waiting on
+stops, so it does not compete with the lite download. A full download that a
+pending call still waits on continues until that call finishes or is
+cancelled. Session creation is never interrupted.
+
 ### iPhone and iPad
 
 On iOS, including desktop-mode iPad, the library uses a dedicated single-threaded
@@ -86,8 +115,12 @@ deployed origin have not been verified for this model-selection change.
 | Option | Type | Default | Meaning |
 | --- | --- | --- | --- |
 | `quality` | `'fast' \| 'quality'` | `'fast'` | Mask smoothing level. `quality` costs a little time and gives cleaner edges |
+| `model` | `'auto' \| 'lite' \| 'full'` | `'auto'` | Which weights to use. See [Choose the model yourself](#choose-the-model-yourself) |
 | `onProgress` | `(progress) => void` | | Called through the `preparing`, `downloading`, `processing`, and `finishing` stages |
 | `signal` | `AbortSignal` | | Cancel a run. The promise rejects with a `BackgroundRemovalError` |
+
+`prepareBackgroundRemoval({ model, signal })` accepts the same `model` option.
+Its `signal` stops waiting without cancelling the shared load.
 
 ## Result
 

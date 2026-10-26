@@ -1,5 +1,13 @@
 import { describe, expect, test } from 'bun:test'
-import { detectEngineChoices, FULL_MODEL, LITE_MODEL, modelUrl } from './models'
+import {
+  choicesForTier,
+  detectEngineChoices,
+  type EngineChoice,
+  FULL_MODEL,
+  LITE_MODEL,
+  MODEL_TIER_BYTES,
+  modelUrl,
+} from './models'
 
 const chrome = 'Mozilla/5.0 Chrome/150.0.0.0 Safari/537.36'
 const adapter = {
@@ -155,5 +163,55 @@ describe('hardware-based model selection', () => {
       { definition: FULL_MODEL, provider: 'wasm' },
       { definition: LITE_MODEL, provider: 'wasm' },
     ])
+  })
+})
+
+describe('pinned model tiers', () => {
+  const capable: EngineChoice[] = [
+    { definition: FULL_MODEL, provider: 'webgpu' },
+    { definition: LITE_MODEL, provider: 'webgpu' },
+    { definition: LITE_MODEL, provider: 'wasm' },
+  ]
+  const liteGpu: EngineChoice[] = [
+    { definition: LITE_MODEL, provider: 'webgpu' },
+    { definition: LITE_MODEL, provider: 'wasm' },
+  ]
+  const cpuOnly: EngineChoice[] = [{ definition: LITE_MODEL, provider: 'wasm' }]
+
+  test('auto keeps the detected order', () => {
+    expect(choicesForTier(capable, 'auto')).toEqual(capable)
+    expect(choicesForTier(cpuOnly, 'auto')).toEqual(cpuOnly)
+  })
+
+  test('lite drops the full model on a device that could run it', () => {
+    expect(choicesForTier(capable, 'lite')).toEqual(liteGpu)
+    expect(
+      choicesForTier(
+        [{ definition: FULL_MODEL, provider: 'wasm' }, ...cpuOnly],
+        'lite',
+      ),
+    ).toEqual(cpuOnly)
+  })
+
+  test('full tries the full model where detection declined it, keeping lite as the fallback', () => {
+    expect(choicesForTier(capable, 'full')).toEqual(capable)
+    expect(choicesForTier(liteGpu, 'full')).toEqual([
+      { definition: FULL_MODEL, provider: 'webgpu' },
+      ...liteGpu,
+    ])
+    expect(choicesForTier(cpuOnly, 'full')).toEqual([
+      { definition: FULL_MODEL, provider: 'wasm' },
+      ...cpuOnly,
+    ])
+  })
+
+  test('publishes the download size of each pinned tier', () => {
+    expect(MODEL_TIER_BYTES).toEqual({
+      lite: LITE_MODEL.bytes,
+      full: FULL_MODEL.bytes,
+    })
+    // The sizes the picker shows: 93.9 MiB and 451.5 MiB, rounded.
+    expect(Math.round(MODEL_TIER_BYTES.lite / 1024 ** 2)).toBe(94)
+    expect(Math.round(MODEL_TIER_BYTES.full / 1024 ** 2)).toBe(452)
   })
 })

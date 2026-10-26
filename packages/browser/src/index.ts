@@ -32,6 +32,7 @@ import {
 } from './image'
 import { clearIosModel, prepareIosModel, removeIosBackground } from './ios'
 import {
+  choicesForTier,
   detectEngineChoices,
   type EngineChoice,
   type ExecutionProvider,
@@ -39,6 +40,7 @@ import {
   FULL_MODEL,
   LITE_MODEL,
   type ModelDefinition,
+  type ModelTier,
   modelUrl,
   type RemovalModel,
 } from './models'
@@ -63,7 +65,13 @@ export {
 } from './image'
 
 export type RemovalQuality = 'fast' | 'quality'
-export type { ExecutionProvider, RemovalModel } from './models'
+export {
+  type ExecutionProvider,
+  MODEL_TIER_BYTES,
+  MODEL_TIERS,
+  type ModelTier,
+  type RemovalModel,
+} from './models'
 export { shouldUseSingleThreadedWasm as isIosBrowser } from './runtime'
 
 export interface RemovalProgress {
@@ -74,11 +82,22 @@ export interface RemovalProgress {
   download?: { loadedBytes: number; totalBytes: number }
   /** Execution provider, once the engine for this run has been chosen. */
   provider?: ExecutionProvider
+  /** Model the run is loading or using, once its engine has been chosen. */
+  model?: RemovalModel
 }
 
 export interface RemoveBackgroundOptions {
   quality?: RemovalQuality
+  /** Which weights to use. Defaults to `auto`. Ignored on iPhone and iPad. */
+  model?: ModelTier
   onProgress?: (progress: RemovalProgress) => void
+  signal?: AbortSignal
+}
+
+export interface PrepareBackgroundRemovalOptions {
+  /** Which weights to prepare. Defaults to `auto`. Ignored on iPhone and iPad. */
+  model?: ModelTier
+  /** Stops waiting. The shared load continues unless it becomes unwanted. */
   signal?: AbortSignal
 }
 
@@ -144,6 +163,10 @@ type EngineLoad = {
    */
   copy?: number
   disposal?: Promise<void>
+  definition: ModelDefinition
+  settled: boolean
+  /** Aborts the load's requests and rejects it. */
+  stop: AbortController
 }
 
 const MODEL_CACHE_NAME = 'transformers-cache'
@@ -157,6 +180,10 @@ const corruptModels = createFailureEvictions(
 )
 let detectedChoices: Promise<EngineChoice[]> | undefined
 let webgpuUsableForSession = true
+// The tier the latest prepare or removal call asked for. While it is lite, a
+// full-model download no caller waits on is stopped instead of finishing in
+// the background and competing with the lite download for a slow connection.
+let latestTier: ModelTier = 'auto'
 
 export function getBrowserCapabilities(): BrowserCapabilities {
   const hasNavigatorGpu = typeof navigator !== 'undefined' && 'gpu' in navigator
@@ -177,6 +204,7 @@ export function clearModelCache(): void {
   failedEngines.clear()
   detectedChoices = undefined
   webgpuUsableForSession = true
+  latestTier = 'auto'
   modelCache = undefined
   try {
     localStorage.removeItem(WEBGPU_FAILURE_KEY)
@@ -191,11 +219,21 @@ export function clearModelCache(): void {
  * Download and initialize the model before the first image is selected.
  * Concurrent calls share the same initialization work with removeBackground.
  */
-export async function prepareBackgroundRemoval(): Promise<ExecutionProvider> {
-  if (useIosModel()) return prepareIosModel()
+export async function prepareBackgroundRemoval(
+  options: PrepareBackgroundRemovalOptions = {},
+): Promise<ExecutionProvider> {
+  if (useIosModel()) {
+    throwIfCancelled(options.signal)
+    return untilCancelled(prepareIosModel(), options.signal)
+  }
+  const tier = requestTier(options.model)
+  // A call that is already cancelled still records the tier, so choosing lite
+  // stops an unwanted full download without starting another one.
+  throwIfCancelled(options.signal)
   const lease = await getPreferredEngine(
-    await getPreferredChoices(),
+    await getPreferredChoices(tier),
     () => undefined,
+    options.signal,
   )
   try {
     return lease.engine.provider
@@ -211,6 +249,7 @@ export async function removeBackground(
   if (useIosModel()) return removeIosBackground(input, options)
   const startedAt = performance.now()
   const quality = options.quality ?? 'fast'
+  const tier = requestTier(options.model)
   let reportedProgress = 0
   const notify = (progress: RemovalProgress) => {
     reportedProgress = Math.max(reportedProgress, progress.progress)
@@ -241,7 +280,7 @@ export async function removeBackground(
       sourceFormat = 'png'
     }
     throwIfCancelled(options.signal)
-    const choices = await getPreferredChoices()
+    const choices = await getPreferredChoices(tier)
     throwIfCancelled(options.signal)
     const preparedImage = await prepareImageForInference(
       source,
@@ -253,7 +292,7 @@ export async function removeBackground(
 
     lease = await getPreferredEngine(
       choices,
-      (load, modelIsCached, provider) => {
+      (load, modelIsCached, choice) => {
         const downloading = !modelIsCached && !load.initializing
         notify({
           stage: downloading ? 'downloading' : 'preparing',
@@ -263,7 +302,8 @@ export async function removeBackground(
             : modelIsCached
               ? 'Loading cached model…'
               : 'Downloading local model…',
-          provider,
+          provider: choice.provider,
+          model: choice.definition.name,
           ...(downloading && load.totalBytes > 0
             ? {
                 download: {
@@ -284,6 +324,7 @@ export async function removeBackground(
       progress: 0.7,
       message: 'Removing background…',
       provider: engine.provider,
+      model: engine.definition.name,
     })
     const { RawImage } = await import('@huggingface/transformers')
     const modelInput = new RawImage(
@@ -324,7 +365,7 @@ export async function removeBackground(
         })
         lease = await getPreferredEngine(
           choices,
-          (load, cached, provider) => {
+          (load, cached, choice) => {
             const downloading = !cached && !load.initializing
             notify({
               stage: downloading ? 'downloading' : 'preparing',
@@ -332,7 +373,8 @@ export async function removeBackground(
               message: load.initializing
                 ? 'Starting compatibility mode…'
                 : 'Preparing compatibility mode…',
-              provider,
+              provider: choice.provider,
+              model: choice.definition.name,
               ...(downloading && load.totalBytes > 0
                 ? {
                     download: {
@@ -352,6 +394,7 @@ export async function removeBackground(
           progress: 0.89,
           message: 'Retrying background removal…',
           provider: engine.provider,
+          model: engine.definition.name,
         })
       }
     }
@@ -446,7 +489,7 @@ async function getPreferredEngine(
   onDownload: (
     progress: EngineProgress,
     cached: boolean,
-    provider: ExecutionProvider,
+    choice: EngineChoice,
   ) => void,
   signal?: AbortSignal,
 ): Promise<EngineLease> {
@@ -476,7 +519,7 @@ async function getPreferredEngine(
     try {
       return await getEngine(
         choice,
-        (progress) => onDownload(progress, cached, choice.provider),
+        (progress) => onDownload(progress, cached, choice),
         signal,
         attempt,
       )
@@ -527,9 +570,40 @@ async function getPreferredEngine(
   throw modelLoadError(lastError)
 }
 
-async function getPreferredChoices(): Promise<EngineChoice[]> {
+/** Record the tier a call asked for, and stop downloads it makes unwanted. */
+function requestTier(tier: ModelTier = 'auto'): ModelTier {
+  latestTier = tier
+  for (const [key, load] of engineLoads) stopIfUnwanted(key, load)
+  return tier
+}
+
+/**
+ * Stop a full-model download once lite is wanted and no caller waits on it.
+ * Session creation is left to finish: it cannot be interrupted, and stopping
+ * it would not save any bandwidth.
+ */
+function stopIfUnwanted(key: string, load: EngineLoad): void {
+  if (
+    latestTier !== 'lite' ||
+    load.definition.name !== 'birefnet' ||
+    load.users > 0 ||
+    load.settled ||
+    load.progress?.initializing
+  ) {
+    return
+  }
+  if (engineLoads.get(key) === load) engineLoads.delete(key)
+  load.stop.abort(
+    new BackgroundRemovalError(
+      'cancelled',
+      'The full model download stopped because lite was chosen.',
+    ),
+  )
+}
+
+async function getPreferredChoices(tier: ModelTier): Promise<EngineChoice[]> {
   detectedChoices ??= detectEngineChoices()
-  const choices = await detectedChoices
+  const choices = choicesForTier(await detectedChoices, tier)
   const skipFullModel = await isFullModelBlocked()
   const usable = choices.filter(
     (choice) =>
@@ -648,6 +722,7 @@ async function getEngine(
   let load = engineLoads.get(key)
   if (!load) {
     const listeners: EngineLoad['listeners'] = new Set()
+    const stop = new AbortController()
     let currentLoad: EngineLoad
     const promise = loadEngine(
       choice,
@@ -667,10 +742,23 @@ async function getEngine(
           lastReaderOf(url) ?? getModelCache()
         )?.copyLastRead(url)
       },
+      stop.signal,
     )
-    currentLoad = { promise, listeners, users: 0, retired: false }
+    currentLoad = {
+      promise,
+      listeners,
+      users: 0,
+      retired: false,
+      definition: choice.definition,
+      settled: false,
+      stop,
+    }
     load = currentLoad
     engineLoads.set(key, load)
+    const settle = () => {
+      currentLoad.settled = true
+    }
+    promise.then(settle, settle)
     // A failed load must not be reused, even when every caller cancelled
     // before it settled.
     promise.catch((error) => {
@@ -695,6 +783,7 @@ async function getEngine(
     released = true
     reservedLoad.users--
     if (reservedLoad.retired) await retireEngine(reservedLoad)
+    else stopIfUnwanted(key, reservedLoad)
   }
   reservedLoad.listeners.add(onDownload)
   try {
@@ -968,6 +1057,7 @@ async function loadEngine(
   choice: EngineChoice,
   onDownload: EngineProgressListener,
   onModelFileOpened: () => void,
+  stop: AbortSignal,
 ): Promise<Engine> {
   const { provider, definition } = choice
   const { AutoModel, AutoProcessor, env } = await import(
@@ -1009,6 +1099,9 @@ async function loadEngine(
       revision: definition.revision,
       progress_callback: trackedProgress,
     })) as unknown as ProcessorRunner
+    // A load stopped or timed out while the processor loaded must not go on
+    // to fetch the weights: its watchdog no longer supervises the request.
+    if (abandoned) throw new Error('The model load was abandoned')
 
     const model = (await AutoModel.from_pretrained(definition.id, {
       revision: definition.revision,
@@ -1026,15 +1119,23 @@ async function loadEngine(
     () => undefined,
   )
 
+  const stopped = new Promise<never>((_resolve, reject) => {
+    const abort = () => reject(stop.reason)
+    if (stop.aborted) abort()
+    else stop.addEventListener('abort', abort, { once: true })
+  })
+  stopped.catch(() => undefined)
+
   let failure: Error | undefined
   try {
-    return await Promise.race([pending, watch.failed])
+    return await Promise.race([pending, watch.failed, stopped])
   } catch (error) {
     abandoned = true
     failure = error instanceof Error ? error : new Error('Model load failed.')
     if (
       error instanceof ModelStartTimeoutError ||
-      error instanceof ModelDownloadError
+      error instanceof ModelDownloadError ||
+      stop.aborted
     ) {
       throw error
     }

@@ -105,6 +105,15 @@ page. The patch applies to this repository's builds; consumers installing
 The existing `quality` option controls mask refinement independently of model
 selection. Detection and fallback stay inside the browser package.
 
+A `model` option (`auto`, `lite`, `full`) pins the weights before the walk
+starts. `lite` drops the full model from the list; `full` puts it first even
+where detection declined it, on WebGPU when detection found a usable fp16 GPU,
+and keeps lite as the fallback. Session failures and the full-model block still
+apply. When the latest call asks for lite, a full-model download no call waits
+on is aborted rather than finishing in the background. The web app saves the
+choice in localStorage under `bg0:model-tier`, accepts `?model=` for one visit,
+and offers Lite while the full model downloads.
+
 Local verification exercised full and lite models on WebGPU and WASM with an
 Apple M4 Max, 64 GiB RAM, macOS, and Chrome for Testing 153. Low-memory and
 CPU-only selection used simulated hints on that Mac. Other physical devices,

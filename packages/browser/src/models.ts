@@ -3,6 +3,13 @@ import { canUseOnnxWebGpu, shouldUseSingleThreadedWasm } from './runtime'
 export type RemovalModel = 'birefnet' | 'birefnet-lite'
 export type ExecutionProvider = 'webgpu' | 'wasm'
 
+/**
+ * Which weights to download. `auto` picks by device; `lite` and `full` pin
+ * the choice, for example to keep the first download small on a slow network.
+ */
+export const MODEL_TIERS = ['auto', 'lite', 'full'] as const
+export type ModelTier = (typeof MODEL_TIERS)[number]
+
 export interface ModelDefinition {
   name: RemovalModel
   id: string
@@ -29,6 +36,12 @@ export const FULL_MODEL: ModelDefinition = {
   bytes: 473_435_223,
   inputSize: 512,
 }
+
+/** Download size of each pinned tier's weights, in bytes. */
+export const MODEL_TIER_BYTES = {
+  lite: LITE_MODEL.bytes,
+  full: FULL_MODEL.bytes,
+} as const satisfies Record<Exclude<ModelTier, 'auto'>, number>
 
 export interface EngineChoice {
   definition: ModelDefinition
@@ -125,4 +138,38 @@ export async function detectEngineChoices(
   }
   choices.push({ definition: LITE_MODEL, provider: 'wasm' })
   return choices
+}
+
+/**
+ * Narrow detected choices to a pinned tier. Pinning full tries the full model
+ * even where detection declined it, on WebGPU when detection found a usable
+ * GPU, and keeps lite as the fallback so a failure still produces a result.
+ */
+export function choicesForTier(
+  choices: EngineChoice[],
+  tier: ModelTier,
+): EngineChoice[] {
+  switch (tier) {
+    case 'auto':
+      return choices
+    case 'lite':
+      return choices.filter((choice) => choice.definition.name !== 'birefnet')
+    case 'full': {
+      const full = choices.filter(
+        (choice) => choice.definition.name === 'birefnet',
+      )
+      const lite = choices.filter(
+        (choice) => choice.definition.name !== 'birefnet',
+      )
+      if (full.length === 0) {
+        const gpu = lite.some((choice) => choice.provider === 'webgpu')
+        full.push({ definition: FULL_MODEL, provider: gpu ? 'webgpu' : 'wasm' })
+      }
+      return [...full, ...lite]
+    }
+    default: {
+      const _exhaustive: never = tier
+      return _exhaustive
+    }
+  }
 }

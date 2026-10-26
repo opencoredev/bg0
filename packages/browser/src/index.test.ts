@@ -1373,8 +1373,12 @@ describe('model load recovery', () => {
 
   test('cancelling stops waiting on a model that is still loading', async () => {
     modelLoadTimings.startMs = 200
+    let finish: (value: never) => void = () => undefined
     spyOn(AutoModel, 'from_pretrained').mockImplementation(
-      () => new Promise(() => undefined),
+      () =>
+        new Promise((resolve) => {
+          finish = resolve
+        }),
     )
     const controller = new AbortController()
     const pending = removeBackground(png, { signal: controller.signal })
@@ -1382,6 +1386,9 @@ describe('model load recovery', () => {
     const startedAt = performance.now()
     await expect(pending).rejects.toMatchObject({ code: 'cancelled' })
     expect(performance.now() - startedAt).toBeLessThan(150)
+    // Settle the shared load so its watchdog does not supervise later tests.
+    finish(model() as never)
+    await new Promise((resolve) => setTimeout(resolve, 0))
   })
 
   test('a load that fails after every caller cancelled is not reused', async () => {
@@ -1441,6 +1448,190 @@ describe('model load recovery', () => {
     expect(
       events.filter((event) => event.stage !== 'downloading' && event.download),
     ).toEqual([])
+  })
+
+  describe('pinned model tiers', () => {
+    async function until(condition: () => boolean) {
+      for (let tries = 0; tries < 200 && !condition(); tries += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 1))
+      }
+      expect(condition()).toBe(true)
+    }
+
+    /** The full model downloads until its request is aborted; lite loads. */
+    function stallFullDownload() {
+      const signals: AbortSignal[] = []
+      env.fetch = mock(
+        async (_input: RequestInfo | URL, init?: RequestInit) => {
+          if (init?.signal) signals.push(init.signal)
+          return stalledResponse()
+        },
+      )
+      const load = spyOn(AutoModel, 'from_pretrained').mockImplementation(
+        async (id) => {
+          if (id === FULL_MODEL.id && signals.length === 0) {
+            await (await env.fetch(modelFile(FULL_MODEL))).arrayBuffer()
+          }
+          return model('logits') as never
+        },
+      )
+      return { signals, load }
+    }
+
+    test('lite skips the full model on a device that could run it', async () => {
+      const load = spyOn(AutoModel, 'from_pretrained').mockImplementation(
+        async (id, options) => {
+          options?.progress_callback?.({
+            status: 'progress',
+            name: id,
+            file: 'onnx/model_fp16.onnx',
+            progress: 50,
+            loaded: 1,
+            total: 2,
+          })
+          return model('logits') as never
+        },
+      )
+      const events: RemovalProgress[] = []
+      const result = await removeBackground(png, {
+        model: 'lite',
+        onProgress: (event) => events.push(event),
+      })
+      expect(result).toMatchObject({
+        model: 'birefnet-lite',
+        provider: 'webgpu',
+      })
+      expect(load.mock.calls.map((call) => call[0])).toEqual([LITE_MODEL.id])
+      expect(
+        events.find((event) => event.stage === 'downloading'),
+      ).toMatchObject({ model: 'birefnet-lite', provider: 'webgpu' })
+      expect(
+        events.find((event) => event.stage === 'processing'),
+      ).toMatchObject({ model: 'birefnet-lite' })
+    })
+
+    test('full runs the full model on a device detection would keep on lite', async () => {
+      Object.assign(globalThis.navigator, { deviceMemory: 2 })
+      const load = spyOn(AutoModel, 'from_pretrained').mockResolvedValue(
+        model('logits') as never,
+      )
+      expect(await removeBackground(png)).toMatchObject({
+        model: 'birefnet-lite',
+      })
+      expect(await removeBackground(png, { model: 'full' })).toMatchObject({
+        model: 'birefnet',
+        provider: 'webgpu',
+      })
+      expect(await prepareBackgroundRemoval({ model: 'full' })).toBe('webgpu')
+      expect(load.mock.calls.map((call) => call[0])).toEqual([
+        LITE_MODEL.id,
+        FULL_MODEL.id,
+      ])
+    })
+
+    test('choosing lite stops a full download nobody waits on, without marking it failed', async () => {
+      const { signals, load } = stallFullDownload()
+      const warm = new AbortController()
+      const warming = prepareBackgroundRemoval({ signal: warm.signal })
+      await until(() => signals.length === 1)
+      warm.abort()
+      await expect(warming).rejects.toMatchObject({ code: 'cancelled' })
+      // Cancelling alone keeps the shared download going for the next image.
+      expect(signals[0].aborted).toBe(false)
+
+      expect(await removeBackground(png, { model: 'lite' })).toMatchObject({
+        model: 'birefnet-lite',
+      })
+      expect(signals[0].aborted).toBe(true)
+
+      // Switching back starts the full model again instead of skipping it.
+      expect(await removeBackground(png)).toMatchObject({ model: 'birefnet' })
+      expect(load.mock.calls.map((call) => call[0])).toEqual([
+        FULL_MODEL.id,
+        LITE_MODEL.id,
+        FULL_MODEL.id,
+      ])
+      expect(storage.size).toBe(0)
+    })
+
+    test('a load stopped while its processor loads never fetches the full weights', async () => {
+      let finishProcessor: (value: never) => void = () => undefined
+      spyOn(AutoProcessor, 'from_pretrained').mockImplementation(((
+        id: string,
+      ) =>
+        id === FULL_MODEL.id
+          ? new Promise((resolve) => {
+              finishProcessor = resolve
+            })
+          : Promise.resolve(async () => ({ pixel_values: 'pixels' }))) as never)
+      const load = spyOn(AutoModel, 'from_pretrained').mockResolvedValue(
+        model('logits') as never,
+      )
+      const warm = new AbortController()
+      const warming = prepareBackgroundRemoval({ signal: warm.signal })
+      await until(
+        () =>
+          (AutoProcessor.from_pretrained as ReturnType<typeof spyOn>).mock.calls
+            .length === 1,
+      )
+      warm.abort()
+      await expect(warming).rejects.toMatchObject({ code: 'cancelled' })
+      expect(await removeBackground(png, { model: 'lite' })).toMatchObject({
+        model: 'birefnet-lite',
+      })
+      finishProcessor((async () => ({ pixel_values: 'pixels' })) as never)
+      await new Promise((resolve) => setTimeout(resolve, 5))
+      expect(load.mock.calls.map((call) => call[0])).toEqual([LITE_MODEL.id])
+    })
+
+    test('an already cancelled prepare records lite without loading anything', async () => {
+      const { signals, load } = stallFullDownload()
+      const warm = new AbortController()
+      const warming = prepareBackgroundRemoval({ signal: warm.signal })
+      await until(() => signals.length === 1)
+      warm.abort()
+      await expect(warming).rejects.toMatchObject({ code: 'cancelled' })
+      await expect(
+        prepareBackgroundRemoval({
+          model: 'lite',
+          signal: AbortSignal.abort(),
+        }),
+      ).rejects.toMatchObject({ code: 'cancelled' })
+      // The stop settles a few microtasks later, once the load's race rejects.
+      await until(() => signals[0].aborted)
+      expect(load.mock.calls.map((call) => call[0])).toEqual([FULL_MODEL.id])
+    })
+
+    test('a full download a caller still waits on continues until that caller leaves', async () => {
+      const { signals } = stallFullDownload()
+      const first = new AbortController()
+      const waiting = removeBackground(png, { signal: first.signal })
+      await until(() => signals.length === 1)
+
+      expect(await removeBackground(png, { model: 'lite' })).toMatchObject({
+        model: 'birefnet-lite',
+      })
+      expect(signals[0].aborted).toBe(false)
+
+      first.abort()
+      await expect(waiting).rejects.toMatchObject({ code: 'cancelled' })
+      await until(() => signals[0].aborted)
+    })
+
+    test('auto and full keep a full download running', async () => {
+      const { signals } = stallFullDownload()
+      const warm = new AbortController()
+      const warming = prepareBackgroundRemoval({ signal: warm.signal })
+      await until(() => signals.length === 1)
+      warm.abort()
+      await expect(warming).rejects.toMatchObject({ code: 'cancelled' })
+      void prepareBackgroundRemoval({
+        model: 'full',
+        signal: AbortSignal.abort(),
+      }).catch(() => undefined)
+      await new Promise((resolve) => setTimeout(resolve, 5))
+      expect(signals[0].aborted).toBe(false)
+    })
   })
 })
 
