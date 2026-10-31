@@ -54,7 +54,7 @@ source snapshot is pinned to ZhengPeng7/BiRefNet_lite revision
    `python tools/ios-model/export.py --size 512 --out tools/ios-model/grid-512-fp32.onnx`.
    The exporter compares the sequential deformable operation and logits against
    torchvision/reference before folding static operations and deduplicating.
-3. In a separate Python 3.9 environment using `requirements-quantize.txt`, run
+3. In a separate Python 3.10 environment using `requirements-quantize.txt`, run
    `python tools/ios-model/quantize.py`. This writes the quantized ONNX and
    portable ORT artifact to an ignored `tools/ios-model/output` directory.
 4. Re-run browser output comparisons before accepting regenerated artifacts.
